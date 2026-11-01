@@ -19,7 +19,12 @@ import {
   userAchievements,
   userCurriculumCustomizations,
 } from './schema';
-import { ensureCurriculumSeedData } from './curriculumSeed';
+import {
+  ensureCurriculumSeedData,
+  DEFAULT_SUBJECTS,
+  DEFAULT_PAPERS,
+  DEFAULT_TOPICS,
+} from './curriculumSeed';
 import {
   addDaysToYmd,
   computeStreaksFromDates,
@@ -940,6 +945,7 @@ export async function deleteUserAccountTransactional(userId: string) {
     await tx
       .delete(userCurriculumCustomizations)
       .where(eq(userCurriculumCustomizations.userId, userId));
+    await tx.delete(curriculumResources).where(eq(curriculumResources.userId, userId));
     await tx.delete(curriculumTopics).where(eq(curriculumTopics.userId, userId));
     await tx.delete(curriculumPapers).where(eq(curriculumPapers.userId, userId));
     await tx.delete(curriculumSubjects).where(eq(curriculumSubjects.userId, userId));
@@ -959,45 +965,119 @@ export async function deleteUserAccountTransactional(userId: string) {
 
 /**
  * Loads the complete revision workspace:
- * - Curriculum subjects, papers, and topics (both seeded and user-added)
+ * - Code-first static syllabus (7 default subjects, 15 papers, 151 chapters) served directly
+ *   from in-memory TypeScript module (0ms read latency, zero database roundtrips)
+ * - User-added custom curriculum subjects, papers, and topics (userId = userId)
  * - User customizations (hidden, custom title, custom order)
  * - User's revision activity records
+ * - User's curriculum resources
  */
 export async function getRevisionWorkspaceData(userId: string) {
-  await ensureCurriculumSeedData();
+  // 1. Query only user-specific dynamic data from DB in parallel
+  const [
+    userSubjects,
+    userPapers,
+    userTopics,
+    customizationsList,
+    recordsList,
+    resourcesList,
+  ] = await Promise.all([
+    db
+      .select()
+      .from(curriculumSubjects)
+      .where(eq(curriculumSubjects.userId, userId))
+      .orderBy(asc(curriculumSubjects.displayOrder)),
+    db
+      .select()
+      .from(curriculumPapers)
+      .where(eq(curriculumPapers.userId, userId))
+      .orderBy(asc(curriculumPapers.displayOrder)),
+    db
+      .select()
+      .from(curriculumTopics)
+      .where(eq(curriculumTopics.userId, userId))
+      .orderBy(asc(curriculumTopics.displayOrder)),
+    db
+      .select()
+      .from(userCurriculumCustomizations)
+      .where(eq(userCurriculumCustomizations.userId, userId)),
+    db
+      .select()
+      .from(revisionRecords)
+      .where(eq(revisionRecords.userId, userId))
+      .orderBy(desc(revisionRecords.updatedAt)),
+    db
+      .select()
+      .from(curriculumResources)
+      .where(eq(curriculumResources.userId, userId))
+      .orderBy(desc(curriculumResources.createdAt)),
+  ]);
 
-  const [subjectsList, papersList, topicsList, customizationsList, recordsList, resourcesList] =
-    await Promise.all([
-      db
-        .select()
-        .from(curriculumSubjects)
-        .where(or(isNull(curriculumSubjects.userId), eq(curriculumSubjects.userId, userId)))
-        .orderBy(asc(curriculumSubjects.displayOrder)),
-      db
-        .select()
-        .from(curriculumPapers)
-        .where(or(isNull(curriculumPapers.userId), eq(curriculumPapers.userId, userId)))
-        .orderBy(asc(curriculumPapers.displayOrder)),
-      db
-        .select()
-        .from(curriculumTopics)
-        .where(or(isNull(curriculumTopics.userId), eq(curriculumTopics.userId, userId)))
-        .orderBy(asc(curriculumTopics.displayOrder)),
-      db
-        .select()
-        .from(userCurriculumCustomizations)
-        .where(eq(userCurriculumCustomizations.userId, userId)),
-      db
-        .select()
-        .from(revisionRecords)
-        .where(eq(revisionRecords.userId, userId))
-        .orderBy(desc(revisionRecords.updatedAt)),
-      db
-        .select()
-        .from(curriculumResources)
-        .where(eq(curriculumResources.userId, userId))
-        .orderBy(desc(curriculumResources.createdAt)),
-    ]);
+  // 2. Build fast lookup map for customizations: `${targetType}_${targetId}`
+  const custMap = new Map<string, (typeof customizationsList)[0]>();
+  for (const c of customizationsList) {
+    custMap.set(`${c.targetType}_${c.targetId}`, c);
+  }
+
+  // 3. Merge subjects: static defaults + user-added custom subjects, with customizations applied
+  const userSubjectIdSet = new Set(userSubjects.map((s) => s.id));
+  const subjectsList = [
+    ...DEFAULT_SUBJECTS.filter((s) => !userSubjectIdSet.has(s.id)),
+    ...userSubjects,
+  ]
+    .map((s) => {
+      const cust = custMap.get(`subject_${s.id}`);
+      return {
+        ...s,
+        name: cust?.customTitle ? cust.customTitle : s.name,
+        displayOrder:
+          cust?.customOrder !== null && cust?.customOrder !== undefined
+            ? cust.customOrder
+            : s.displayOrder,
+        isHidden: cust?.isHidden ?? false,
+      };
+    })
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+
+  // 4. Merge papers: static defaults + user-added custom papers, with customizations applied
+  const userPaperIdSet = new Set(userPapers.map((p) => p.id));
+  const papersList = [
+    ...DEFAULT_PAPERS.filter((p) => !userPaperIdSet.has(p.id)),
+    ...userPapers,
+  ]
+    .map((p) => {
+      const cust = custMap.get(`paper_${p.id}`);
+      return {
+        ...p,
+        title: cust?.customTitle ? cust.customTitle : p.title,
+        displayOrder:
+          cust?.customOrder !== null && cust?.customOrder !== undefined
+            ? cust.customOrder
+            : p.displayOrder,
+        isHidden: cust?.isHidden ?? false,
+      };
+    })
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+
+  // 5. Merge topics: static defaults + user-added custom topics, with customizations applied
+  const userTopicIdSet = new Set(userTopics.map((t) => t.id));
+  const topicsList = [
+    ...DEFAULT_TOPICS.filter((t) => !userTopicIdSet.has(t.id)),
+    ...userTopics,
+  ]
+    .map((t) => {
+      const cust = custMap.get(`topic_${t.id}`);
+      return {
+        ...t,
+        title: cust?.customTitle ? cust.customTitle : t.title,
+        displayOrder:
+          cust?.customOrder !== null && cust?.customOrder !== undefined
+            ? cust.customOrder
+            : t.displayOrder,
+        isHidden: cust?.isHidden ?? false,
+      };
+    })
+    .sort((a, b) => a.displayOrder - b.displayOrder);
 
   return {
     subjects: subjectsList,
@@ -1012,6 +1092,7 @@ export async function getRevisionWorkspaceData(userId: string) {
 /**
  * Idempotently toggles a revision activity checkbox.
  * Enforces (userId, topicId, category) uniqueness and UPSERT.
+ * Foreign key safe: automatically ensures static syllabus records in DB if missing.
  */
 export async function toggleRevisionRecord(
   userId: string,
@@ -1024,58 +1105,71 @@ export async function toggleRevisionRecord(
     notes?: string;
   }
 ) {
-  const activityDate =
-    data.activityDate || new Date().toISOString().slice(0, 10);
+  const execute = async () => {
+    const activityDate =
+      data.activityDate || new Date().toISOString().slice(0, 10);
 
-  // Check previous completion status to award milestone XP accurately
-  const [existingRecord] = await db
-    .select({ isCompleted: revisionRecords.isCompleted })
-    .from(revisionRecords)
-    .where(
-      and(
-        eq(revisionRecords.userId, userId),
-        eq(revisionRecords.topicId, data.topicId),
-        eq(revisionRecords.category, data.category)
-      )
-    );
+    // Check previous completion status to award milestone XP accurately
+    const [existingRecord] = await db
+      .select({ isCompleted: revisionRecords.isCompleted })
+      .from(revisionRecords)
+      .where(
+        and(
+          eq(revisionRecords.userId, userId),
+          eq(revisionRecords.topicId, data.topicId),
+          eq(revisionRecords.category, data.category)
+        )
+      );
 
-  const wasCompleted = existingRecord?.isCompleted ?? false;
+    const wasCompleted = existingRecord?.isCompleted ?? false;
 
-  const [record] = await db
-    .insert(revisionRecords)
-    .values({
-      userId,
-      subjectId: data.subjectId,
-      topicId: data.topicId,
-      category: data.category,
-      isCompleted: data.isCompleted,
-      activityDate,
-      notes: data.notes || '',
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [revisionRecords.userId, revisionRecords.topicId, revisionRecords.category],
-      set: {
+    const [record] = await db
+      .insert(revisionRecords)
+      .values({
+        userId,
+        subjectId: data.subjectId,
+        topicId: data.topicId,
+        category: data.category,
         isCompleted: data.isCompleted,
         activityDate,
-        notes: data.notes !== undefined ? data.notes : undefined,
+        notes: data.notes || '',
         updatedAt: new Date(),
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: [revisionRecords.userId, revisionRecords.topicId, revisionRecords.category],
+        set: {
+          isCompleted: data.isCompleted,
+          activityDate,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-  // Award 25 XP per milestone completion (or revoke if unticked)
-  if (!wasCompleted && data.isCompleted) {
-    await awardUserXp(userId, 25);
-  } else if (wasCompleted && !data.isCompleted) {
-    await awardUserXp(userId, -25);
+    // Award 25 XP per milestone completion (or revoke if unticked)
+    if (!wasCompleted && data.isCompleted) {
+      await awardUserXp(userId, 25);
+    } else if (wasCompleted && !data.isCompleted) {
+      await awardUserXp(userId, -25);
+    }
+
+    return record;
+  };
+
+  try {
+    return await execute();
+  } catch (error: any) {
+    if (error?.code === '23503' || error?.message?.includes('violates foreign key constraint')) {
+      await ensureCurriculumSeedData(true);
+      return await execute();
+    }
+    throw error;
   }
-
-  return record;
 }
 
 /**
  * Saves or updates detailed metadata for any of the 6 revision categories
+ * Foreign key safe: automatically ensures static syllabus records in DB if missing.
  */
 export async function saveDetailedRevisionRecord(
   userId: string,
@@ -1093,63 +1187,75 @@ export async function saveDetailedRevisionRecord(
     notes?: string;
   }
 ) {
-  const activityDate =
-    data.activityDate || new Date().toISOString().slice(0, 10);
+  const execute = async () => {
+    const activityDate =
+      data.activityDate || new Date().toISOString().slice(0, 10);
 
-  const nextCompleted = data.isCompleted !== undefined ? data.isCompleted : true;
+    const nextCompleted = data.isCompleted !== undefined ? data.isCompleted : true;
 
-  const [existingRecord] = await db
-    .select({ isCompleted: revisionRecords.isCompleted })
-    .from(revisionRecords)
-    .where(
-      and(
-        eq(revisionRecords.userId, userId),
-        eq(revisionRecords.topicId, data.topicId),
-        eq(revisionRecords.category, data.category)
-      )
-    );
+    const [existingRecord] = await db
+      .select({ isCompleted: revisionRecords.isCompleted })
+      .from(revisionRecords)
+      .where(
+        and(
+          eq(revisionRecords.userId, userId),
+          eq(revisionRecords.topicId, data.topicId),
+          eq(revisionRecords.category, data.category)
+        )
+      );
 
-  const wasCompleted = existingRecord?.isCompleted ?? false;
+    const wasCompleted = existingRecord?.isCompleted ?? false;
 
-  const [record] = await db
-    .insert(revisionRecords)
-    .values({
-      userId,
-      subjectId: data.subjectId,
-      topicId: data.topicId,
-      category: data.category,
-      isCompleted: nextCompleted,
-      activityDate,
-      bookName: data.bookName || null,
-      pagesRead: data.pagesRead !== undefined ? data.pagesRead : null,
-      questionsSolved: data.questionsSolved !== undefined ? data.questionsSolved : null,
-      correctCount: data.correctCount !== undefined ? data.correctCount : null,
-      notes: data.notes || '',
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [revisionRecords.userId, revisionRecords.topicId, revisionRecords.category],
-      set: {
+    const [record] = await db
+      .insert(revisionRecords)
+      .values({
+        userId,
+        subjectId: data.subjectId,
+        topicId: data.topicId,
+        category: data.category,
         isCompleted: nextCompleted,
         activityDate,
-        bookName: data.bookName !== undefined ? data.bookName : undefined,
-        pagesRead: data.pagesRead !== undefined ? data.pagesRead : undefined,
-        questionsSolved:
-          data.questionsSolved !== undefined ? data.questionsSolved : undefined,
-        correctCount: data.correctCount !== undefined ? data.correctCount : undefined,
-        notes: data.notes !== undefined ? data.notes : undefined,
+        bookName: data.bookName || null,
+        pagesRead: data.pagesRead !== undefined ? data.pagesRead : null,
+        questionsSolved: data.questionsSolved !== undefined ? data.questionsSolved : null,
+        correctCount: data.correctCount !== undefined ? data.correctCount : null,
+        notes: data.notes || '',
         updatedAt: new Date(),
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: [revisionRecords.userId, revisionRecords.topicId, revisionRecords.category],
+        set: {
+          isCompleted: nextCompleted,
+          activityDate,
+          bookName: data.bookName !== undefined ? data.bookName : undefined,
+          pagesRead: data.pagesRead !== undefined ? data.pagesRead : undefined,
+          questionsSolved:
+            data.questionsSolved !== undefined ? data.questionsSolved : undefined,
+          correctCount: data.correctCount !== undefined ? data.correctCount : undefined,
+          notes: data.notes !== undefined ? data.notes : undefined,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-  if (!wasCompleted && nextCompleted) {
-    await awardUserXp(userId, 25);
-  } else if (wasCompleted && !nextCompleted) {
-    await awardUserXp(userId, -25);
+    if (!wasCompleted && nextCompleted) {
+      await awardUserXp(userId, 25);
+    } else if (wasCompleted && !nextCompleted) {
+      await awardUserXp(userId, -25);
+    }
+
+    return record;
+  };
+
+  try {
+    return await execute();
+  } catch (error: any) {
+    if (error?.code === '23503' || error?.message?.includes('violates foreign key constraint')) {
+      await ensureCurriculumSeedData(true);
+      return await execute();
+    }
+    throw error;
   }
-
-  return record;
 }
 
 /**
@@ -1185,29 +1291,50 @@ export async function addCustomCurriculumTopic(
     chapterNumber?: number | null;
   }
 ) {
-  // Get max display order for this paper
-  const existing = await db
-    .select({ displayOrder: curriculumTopics.displayOrder })
-    .from(curriculumTopics)
-    .where(eq(curriculumTopics.paperId, data.paperId))
-    .orderBy(desc(curriculumTopics.displayOrder))
-    .limit(1);
+  const execute = async () => {
+    // Get max display order for this paper considering both static defaults and user topics
+    const staticTopicsForPaper = DEFAULT_TOPICS.filter((t) => t.paperId === data.paperId);
+    const maxStaticOrder = staticTopicsForPaper.reduce((max, t) => Math.max(max, t.displayOrder), 0);
 
-  const nextOrder = (existing[0]?.displayOrder || 0) + 1;
+    const existing = await db
+      .select({ displayOrder: curriculumTopics.displayOrder })
+      .from(curriculumTopics)
+      .where(
+        and(
+          eq(curriculumTopics.paperId, data.paperId),
+          eq(curriculumTopics.userId, userId)
+        )
+      )
+      .orderBy(desc(curriculumTopics.displayOrder))
+      .limit(1);
 
-  const [topic] = await db
-    .insert(curriculumTopics)
-    .values({
-      userId,
-      paperId: data.paperId,
-      subjectId: data.subjectId,
-      title: data.title.trim(),
-      chapterNumber: data.chapterNumber || nextOrder,
-      displayOrder: nextOrder,
-    })
-    .returning();
+    const maxDbOrder = existing[0]?.displayOrder || 0;
+    const nextOrder = Math.max(maxStaticOrder, maxDbOrder) + 1;
 
-  return topic;
+    const [topic] = await db
+      .insert(curriculumTopics)
+      .values({
+        userId,
+        paperId: data.paperId,
+        subjectId: data.subjectId,
+        title: data.title.trim(),
+        chapterNumber: data.chapterNumber || nextOrder,
+        displayOrder: nextOrder,
+      })
+      .returning();
+
+    return topic;
+  };
+
+  try {
+    return await execute();
+  } catch (error: any) {
+    if (error?.code === '23503' || error?.message?.includes('violates foreign key constraint')) {
+      await ensureCurriculumSeedData(true);
+      return await execute();
+    }
+    throw error;
+  }
 }
 
 /**
@@ -1229,13 +1356,16 @@ export async function addCustomCurriculumSubject(
   );
 
   const tx = db;
+  const maxStaticOrder = DEFAULT_SUBJECTS.reduce((max, s) => Math.max(max, s.displayOrder), 0);
   const existing = await tx
     .select({ displayOrder: curriculumSubjects.displayOrder })
     .from(curriculumSubjects)
+    .where(eq(curriculumSubjects.userId, userId))
     .orderBy(desc(curriculumSubjects.displayOrder))
     .limit(1);
 
-  const nextOrder = (existing[0]?.displayOrder || 0) + 1;
+  const maxDbOrder = existing[0]?.displayOrder || 0;
+  const nextOrder = Math.max(maxStaticOrder, maxDbOrder) + 1;
 
   const [subject] = await tx
     .insert(curriculumSubjects)
@@ -1768,20 +1898,32 @@ export async function createCurriculumResource(
     notes?: string;
   }
 ) {
-  const [created] = await db
-    .insert(curriculumResources)
-    .values({
-      userId,
-      subjectId: data.subjectId,
-      topicId: data.topicId,
-      title: data.title,
-      url: data.url,
-      resourceType: data.resourceType || 'link',
-      pageReference: data.pageReference || '',
-      notes: data.notes || '',
-    })
-    .returning();
-  return created;
+  const execute = async () => {
+    const [created] = await db
+      .insert(curriculumResources)
+      .values({
+        userId,
+        subjectId: data.subjectId,
+        topicId: data.topicId,
+        title: data.title,
+        url: data.url,
+        resourceType: data.resourceType || 'link',
+        pageReference: data.pageReference || '',
+        notes: data.notes || '',
+      })
+      .returning();
+    return created;
+  };
+
+  try {
+    return await execute();
+  } catch (error: any) {
+    if (error?.code === '23503' || error?.message?.includes('violates foreign key constraint')) {
+      await ensureCurriculumSeedData(true);
+      return await execute();
+    }
+    throw error;
+  }
 }
 
 export async function deleteCurriculumResource(userId: string, id: string) {

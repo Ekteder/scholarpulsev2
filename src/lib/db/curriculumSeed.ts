@@ -339,123 +339,119 @@ export const HSC_SYLLABUS_SEED: SeedSubject[] = [
   },
 ];
 
+import {
+  DEFAULT_SUBJECTS,
+  DEFAULT_PAPERS,
+  DEFAULT_TOPICS,
+  DEFAULT_SUBJECT_BY_ID,
+  DEFAULT_PAPER_BY_ID,
+  DEFAULT_TOPIC_BY_ID,
+  STATIC_TOPIC_IDS,
+  STATIC_SUBJECT_IDS,
+  STATIC_PAPER_IDS,
+  isStaticTopicId,
+  isStaticSubjectId,
+  isStaticPaperId,
+} from '../syllabusData';
+
+export {
+  DEFAULT_SUBJECTS,
+  DEFAULT_PAPERS,
+  DEFAULT_TOPICS,
+  DEFAULT_SUBJECT_BY_ID,
+  DEFAULT_PAPER_BY_ID,
+  DEFAULT_TOPIC_BY_ID,
+  STATIC_TOPIC_IDS,
+  STATIC_SUBJECT_IDS,
+  STATIC_PAPER_IDS,
+  isStaticTopicId,
+  isStaticSubjectId,
+  isStaticPaperId,
+};
+
 let isSeedEnsured = false;
+let seedPromise: Promise<void> | null = null;
 
-export async function ensureCurriculumSeedData(): Promise<void> {
-  if (isSeedEnsured) return;
+export async function ensureCurriculumSeedData(force: boolean = false): Promise<void> {
+  if (isSeedEnsured && !force) return;
+  if (seedPromise) return seedPromise;
 
-  try {
-    // Check if default seeded subjects already exist
-    const existing = await db
-      .select({ id: curriculumSubjects.id, code: curriculumSubjects.code })
-      .from(curriculumSubjects)
-      .where(isNull(curriculumSubjects.userId));
-
-    if (existing.length >= HSC_SYLLABUS_SEED.length) {
-      isSeedEnsured = true;
-      return;
-    }
-
-    const existingCodeMap = new Map(existing.map((s) => [s.code, s.id]));
-
-    const tx = db;
-    let subjOrder = 1;
-    for (const subj of HSC_SYLLABUS_SEED) {
-      let subjectId = existingCodeMap.get(subj.code);
-
-      if (!subjectId) {
-        // Double check in db to guard against concurrent cold starts
-        const recheck = await tx
-          .select({ id: curriculumSubjects.id })
-          .from(curriculumSubjects)
-          .where(and(eq(curriculumSubjects.code, subj.code), isNull(curriculumSubjects.userId)))
+  seedPromise = (async () => {
+    try {
+      if (!force) {
+        // Check if default seeded topics already exist in DB
+        const existing = await db
+          .select({ id: curriculumTopics.id })
+          .from(curriculumTopics)
+          .where(isNull(curriculumTopics.userId))
           .limit(1);
 
-        if (recheck.length > 0) {
-          subjectId = recheck[0].id;
-          existingCodeMap.set(subj.code, subjectId);
-        } else {
-          const [inserted] = await tx
-            .insert(curriculumSubjects)
-            .values({
-              name: subj.name,
-              code: subj.code,
-              color: subj.color,
-              icon: subj.icon,
-              displayOrder: subjOrder,
-              userId: null,
-            })
-            .returning({ id: curriculumSubjects.id });
-          subjectId = inserted.id;
-          existingCodeMap.set(subj.code, subjectId);
+        if (existing.length >= 1) {
+          isSeedEnsured = true;
+          return;
         }
       }
 
-      subjOrder++;
-
-      let paperOrder = 1;
-      for (const paper of subj.papers) {
-        // Check if paper exists
-        const existingPapers = await tx
-          .select({ id: curriculumPapers.id })
-          .from(curriculumPapers)
-          .where(
-            and(
-              eq(curriculumPapers.subjectId, subjectId),
-              eq(curriculumPapers.paperCode, paper.paperCode),
-              isNull(curriculumPapers.userId)
-            )
-          );
-
-        let paperId = existingPapers[0]?.id;
-        if (!paperId) {
-          const [insertedPaper] = await tx
-            .insert(curriculumPapers)
-            .values({
-              subjectId,
-              title: paper.title,
-              paperCode: paper.paperCode,
-              displayOrder: paperOrder,
-              userId: null,
-            })
-            .returning({ id: curriculumPapers.id });
-          paperId = insertedPaper.id;
-        }
-
-        paperOrder++;
-
-        // Check existing topics under this paper
-        const existingTopics = await tx
-          .select({ id: curriculumTopics.id, title: curriculumTopics.title })
-          .from(curriculumTopics)
-          .where(
-            and(
-              eq(curriculumTopics.paperId, paperId),
-              isNull(curriculumTopics.userId)
-            )
-          );
-
-        const existingTitleSet = new Set(existingTopics.map((t) => t.title));
-        const topicsToInsert = paper.topics
-          .filter((t) => !existingTitleSet.has(t.title))
-          .map((t, idx) => ({
-            paperId,
-            subjectId,
-            title: t.title,
-            chapterNumber: t.chapterNumber,
-            displayOrder: idx + 1,
+      // Batch insert deterministic default subjects
+      await db
+        .insert(curriculumSubjects)
+        .values(
+          DEFAULT_SUBJECTS.map((subj) => ({
+            id: subj.id,
+            name: subj.name,
+            code: subj.code,
+            color: subj.color,
+            icon: subj.icon,
+            displayOrder: subj.displayOrder,
             userId: null,
-          }));
+          }))
+        )
+        .onConflictDoNothing();
 
-        if (topicsToInsert.length > 0) {
-          await tx.insert(curriculumTopics).values(topicsToInsert);
-        }
+      // Batch insert deterministic default papers
+      await db
+        .insert(curriculumPapers)
+        .values(
+          DEFAULT_PAPERS.map((paper) => ({
+            id: paper.id,
+            subjectId: paper.subjectId,
+            title: paper.title,
+            paperCode: paper.paperCode,
+            displayOrder: paper.displayOrder,
+            userId: null,
+          }))
+        )
+        .onConflictDoNothing();
+
+      // Batch insert deterministic default topics in chunks of 50
+      for (let i = 0; i < DEFAULT_TOPICS.length; i += 50) {
+        const chunk = DEFAULT_TOPICS.slice(i, i + 50);
+        await db
+          .insert(curriculumTopics)
+          .values(
+            chunk.map((t) => ({
+              id: t.id,
+              paperId: t.paperId,
+              subjectId: t.subjectId,
+              title: t.title,
+              chapterNumber: t.chapterNumber,
+              displayOrder: t.displayOrder,
+              userId: null,
+            }))
+          )
+          .onConflictDoNothing();
       }
-    }
 
-    isSeedEnsured = true;
-    console.log('✓ HSC Curriculum Syllabus Seed checked and ready.');
-  } catch (error) {
-    console.error('Failed to ensure curriculum seed data:', error);
-  }
+      isSeedEnsured = true;
+      console.log('✓ HSC Curriculum Syllabus Seed checked and ready (Code-First Deterministic IDs).');
+    } catch (error) {
+      console.error('Failed to ensure curriculum seed data:', error);
+      throw error;
+    } finally {
+      seedPromise = null;
+    }
+  })();
+
+  return seedPromise;
 }
+

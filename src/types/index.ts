@@ -263,6 +263,7 @@ export interface CurriculumSubject {
   color: string;
   icon: string;
   displayOrder: number;
+  isHidden?: boolean;
   papers?: CurriculumPaper[];
 }
 
@@ -273,6 +274,7 @@ export interface CurriculumPaper {
   title: string;
   paperCode?: string | null;
   displayOrder: number;
+  isHidden?: boolean;
   topics?: CurriculumTopic[];
 }
 
