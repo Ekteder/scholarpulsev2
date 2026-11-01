@@ -52,7 +52,7 @@ export function ExamCountdownAndBurndown() {
   }, [targetExamDate]);
 
   function calculateTimeLeft(targetYmd: string): CountdownState {
-    const target = new Date(`${targetYmd}T09:00:00`);
+    const target = new Date(`${targetYmd}T00:00:00`);
     const now = new Date();
     const diff = target.getTime() - now.getTime();
 
@@ -105,7 +105,7 @@ export function ExamCountdownAndBurndown() {
     const projectedFinishDate = new Date();
     projectedFinishDate.setDate(now.getDate() + daysNeeded);
 
-    const examDateObj = new Date(`${targetExamDate}T09:00:00`);
+    const examDateObj = new Date(`${targetExamDate}T00:00:00`);
     const daysUntilExam = Math.max(0, Math.ceil((examDateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
     const daysBuffer = daysUntilExam - daysNeeded;
