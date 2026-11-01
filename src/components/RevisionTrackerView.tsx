@@ -195,7 +195,7 @@ export function RevisionTrackerView() {
     } finally {
       setLoading(false);
     }
-  }, [fetchRevisionWorkspace, revisionData]);
+  }, [fetchRevisionWorkspace]);
 
   useEffect(() => {
     loadWorkspace(false);
@@ -397,31 +397,33 @@ export function RevisionTrackerView() {
     const nextCompleted = existing ? !existing.isCompleted : true;
     const nowYmd = new Date().toISOString().slice(0, 10);
 
-    // Optimistic UI update
+    // 1. Instant 0ms optimistic UI update in local state
+    const optimisticRecord: RevisionRecord = {
+      id: existing?.id || `temp_${Date.now()}`,
+      userId: 'current',
+      subjectId,
+      topicId,
+      category,
+      activityDate: existing?.activityDate || nowYmd,
+      isCompleted: nextCompleted,
+      bookName: existing?.bookName,
+      pagesRead: existing?.pagesRead,
+      questionsSolved: existing?.questionsSolved,
+      correctCount: existing?.correctCount,
+      notes: existing?.notes,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
     setRecords((prev) => {
       const filtered = prev.filter(
         (r) => !(r.topicId === topicId && r.category === category)
       );
-      const updatedRecord: RevisionRecord = {
-        id: existing?.id || `temp_${Date.now()}`,
-        userId: 'current',
-        subjectId,
-        topicId,
-        category,
-        activityDate: existing?.activityDate || nowYmd,
-        isCompleted: nextCompleted,
-        bookName: existing?.bookName,
-        pagesRead: existing?.pagesRead,
-        questionsSolved: existing?.questionsSolved,
-        correctCount: existing?.correctCount,
-        notes: existing?.notes,
-        createdAt: existing?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      return [...filtered, updatedRecord];
+      return nextCompleted ? [...filtered, optimisticRecord] : filtered;
     });
 
     try {
+      // 2. Triggers context optimistic state + background database update
       const serverRecord = await toggleRevisionActivity({
         subjectId,
         topicId,
@@ -430,15 +432,22 @@ export function RevisionTrackerView() {
         activityDate: nowYmd,
       });
 
-      // Replace optimistic record with server record
-      setRecords((prev) =>
-        prev.map((r) =>
-          r.topicId === topicId && r.category === category ? serverRecord : r
-        )
-      );
+      // 3. Reconcile temporary ID with database ID silently without visual blinks
+      setRecords((prev) => {
+        const filtered = prev.filter(
+          (r) => !(r.topicId === topicId && r.category === category)
+        );
+        return nextCompleted ? [...filtered, serverRecord] : filtered;
+      });
     } catch (err: any) {
       console.error('Failed to toggle revision checkbox:', err);
-      loadWorkspace();
+      // Rollback to previous state on error
+      setRecords((prev) => {
+        const filtered = prev.filter(
+          (r) => !(r.topicId === topicId && r.category === category)
+        );
+        return existing ? [...filtered, existing] : filtered;
+      });
       addToast({
         title: 'Sync Error',
         description: err.message || 'Could not save checkbox state',
@@ -478,6 +487,35 @@ export function RevisionTrackerView() {
     e.preventDefault();
     if (!activeDetailItem) return;
 
+    const existing = recordMap.get(`${activeDetailItem.topic.id}_${activeDetailItem.category}`);
+    const optimisticRecord: RevisionRecord = {
+      id: activeDetailItem.record?.id || existing?.id || `temp_${Date.now()}`,
+      userId: 'current',
+      subjectId: activeDetailItem.subject.id,
+      topicId: activeDetailItem.topic.id,
+      category: activeDetailItem.category,
+      isCompleted: detailIsCompleted,
+      activityDate: detailActivityDate,
+      bookName: detailBookName.trim() || undefined,
+      pagesRead: detailPagesRead !== '' ? Number(detailPagesRead) : undefined,
+      questionsSolved: detailQuestionsSolved !== '' ? Number(detailQuestionsSolved) : undefined,
+      correctCount: detailCorrectCount !== '' ? Number(detailCorrectCount) : undefined,
+      notes: detailNotes.trim() || undefined,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Optimistically update local view immediately and close modal
+    setRecords((prev) => {
+      const filtered = prev.filter(
+        (r) => !(r.topicId === activeDetailItem.topic.id && r.category === activeDetailItem.category)
+      );
+      return detailIsCompleted ? [...filtered, optimisticRecord] : filtered;
+    });
+
+    setDetailModalOpen(false);
+    setActiveDetailItem(null);
+
     try {
       setIsSavingDetail(true);
       const serverRecord = await saveDetailedRevision({
@@ -501,19 +539,19 @@ export function RevisionTrackerView() {
 
       setRecords((prev) => {
         const filtered = prev.filter(
-          (r) =>
-            !(
-              r.topicId === activeDetailItem.topic.id &&
-              r.category === activeDetailItem.category
-            )
+          (r) => !(r.topicId === optimisticRecord.topicId && r.category === optimisticRecord.category)
         );
-        return [...filtered, serverRecord];
+        return detailIsCompleted ? [...filtered, serverRecord] : filtered;
       });
-
-      setDetailModalOpen(false);
-      setActiveDetailItem(null);
     } catch (err: any) {
       console.error('Error saving revision details:', err);
+      // Rollback
+      setRecords((prev) => {
+        const filtered = prev.filter(
+          (r) => !(r.topicId === optimisticRecord.topicId && r.category === optimisticRecord.category)
+        );
+        return existing ? [...filtered, existing] : filtered;
+      });
       addToast({
         title: 'Error',
         description: err.message || 'Failed to save revision details',
@@ -535,15 +573,20 @@ export function RevisionTrackerView() {
       return;
     }
 
+    const recToDelete = activeDetailItem.record;
+    // Optimistic delete immediately
+    setRecords((prev) =>
+      prev.filter((r) => r.id !== recToDelete.id)
+    );
+    setDetailModalOpen(false);
+    setActiveDetailItem(null);
+
     try {
-      await deleteRevisionRecordItem(activeDetailItem.record.id);
-      setRecords((prev) =>
-        prev.filter((r) => r.id !== activeDetailItem.record!.id)
-      );
-      setDetailModalOpen(false);
-      setActiveDetailItem(null);
+      await deleteRevisionRecordItem(recToDelete.id);
     } catch (err: any) {
       console.error('Error deleting record:', err);
+      // Rollback
+      setRecords((prev) => [...prev, recToDelete]);
       addToast({
         title: 'Error',
         description: err.message || 'Failed to reset record',

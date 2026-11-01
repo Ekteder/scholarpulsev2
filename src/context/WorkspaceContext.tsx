@@ -697,7 +697,9 @@ export function WorkspaceProvider({
             if (!isFromSelf) {
               setData((prev) => {
                 if (!prev) return null;
-                const prevRecord = revisionData?.records.find(
+                const prevRecord = revisionCacheRef.current?.records.find(
+                  (r) => r.topicId === topicId && r.category === category
+                ) || revisionData?.records.find(
                   (r) => r.topicId === topicId && r.category === category
                 );
                 const wasCompleted = prevRecord?.isCompleted ?? false;
@@ -711,19 +713,32 @@ export function WorkspaceProvider({
                   },
                 };
               });
-            }
 
-            setRevisionData((prev) => {
-              if (!prev) return null;
-              const filtered = prev.records.filter(
-                (r) => !(r.topicId === topicId && r.category === category)
-              );
-              const nextRecords =
-                isCompleted && record ? [...filtered, record] : filtered;
-              const updated = { ...prev, records: nextRecords };
-              revisionCacheRef.current = updated;
-              return updated;
-            });
+              setRevisionData((prev) => {
+                if (!prev) return null;
+                const filtered = prev.records.filter(
+                  (r) => !(r.topicId === topicId && r.category === category)
+                );
+                const nextRecords =
+                  isCompleted && record ? [...filtered, record] : filtered;
+                const updated = { ...prev, records: nextRecords };
+                revisionCacheRef.current = updated;
+                return updated;
+              });
+            } else if (record?.id) {
+              // Silently reconcile database ID for local optimistic update
+              setRevisionData((prev) => {
+                if (!prev) return null;
+                const nextRecords = prev.records.map((r) =>
+                  r.topicId === topicId && r.category === category
+                    ? { ...r, id: record.id, updatedAt: record.updatedAt }
+                    : r
+                );
+                const updated = { ...prev, records: nextRecords };
+                revisionCacheRef.current = updated;
+                return updated;
+              });
+            }
           }
           break;
         }
@@ -1403,62 +1418,45 @@ export function WorkspaceProvider({
     activityDate?: string;
     notes?: string;
   }) => {
-    const res = await toggleRevisionAction({ ...opts, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.record) throw new Error('Failed to toggle revision');
-    const rec = res.record as unknown as RevisionRecord;
-    
-    // Check if completion status changed to update gamification XP
-    const prevRecord = revisionData?.records.find(
+    const nowYmd = opts.activityDate || new Date().toISOString().slice(0, 10);
+    const prevRecords = revisionCacheRef.current?.records || revisionData?.records || [];
+    const prevRecord = prevRecords.find(
       (r) => r.topicId === opts.topicId && r.category === opts.category
     );
     const wasCompleted = prevRecord?.isCompleted ?? false;
-    const xpDelta = !wasCompleted && opts.isCompleted ? 25 : wasCompleted && !opts.isCompleted ? -25 : 0;
 
-    if (xpDelta !== 0) {
-      setData((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          profile: {
-            ...prev.profile,
-            gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) + xpDelta),
-          },
-        };
-      });
-    }
+    // 1. Instant 0ms optimistic record
+    const optimisticRecord: RevisionRecord = {
+      id: prevRecord?.id || `temp_${Date.now()}`,
+      userId: user?.uid || 'current',
+      subjectId: opts.subjectId,
+      topicId: opts.topicId,
+      category: opts.category,
+      activityDate: nowYmd,
+      isCompleted: opts.isCompleted,
+      bookName: prevRecord?.bookName,
+      pagesRead: prevRecord?.pagesRead,
+      questionsSolved: prevRecord?.questionsSolved,
+      correctCount: prevRecord?.correctCount,
+      notes: opts.notes !== undefined ? opts.notes : prevRecord?.notes,
+      createdAt: prevRecord?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
+    // 2. Instantly update context cache and state
     setRevisionData((prev) => {
       if (!prev) return null;
       const filtered = prev.records.filter(
         (r) => !(r.topicId === opts.topicId && r.category === opts.category)
       );
-      const nextRecords = opts.isCompleted ? [...filtered, rec] : filtered;
+      const nextRecords = opts.isCompleted ? [...filtered, optimisticRecord] : filtered;
       const updated = { ...prev, records: nextRecords };
       revisionCacheRef.current = updated;
       return updated;
     });
 
-    broadcastLocal('revision:toggle', {
-      record: rec,
-      subjectId: opts.subjectId,
-      topicId: opts.topicId,
-      category: opts.category,
-      isCompleted: opts.isCompleted,
-    });
-
-    return rec;
-  }, [revisionData?.records, broadcastLocal]);
-
-  const saveDetailedRevision = useCallback(async (opts: any) => {
-    const prevRecord = revisionData?.records.find((r) => r.id === opts.id || (r.topicId === opts.topicId && r.category === opts.category));
-    const wasCompleted = prevRecord?.isCompleted ?? false;
-    const isCompleted = opts.isCompleted !== undefined ? opts.isCompleted : true;
-    const xpDelta = !wasCompleted && isCompleted ? 25 : wasCompleted && !isCompleted ? -25 : 0;
-
-    const res = await saveDetailedRevisionRecordAction({ ...opts, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.record) throw new Error('Failed to save detailed record');
-    const rec = res.record as unknown as RevisionRecord;
-
+    // 3. Instantly update gamification XP
+    const xpDelta = !wasCompleted && opts.isCompleted ? 25 : wasCompleted && !opts.isCompleted ? -25 : 0;
     if (xpDelta !== 0) {
       setData((prev) => {
         if (!prev) return null;
@@ -1472,21 +1470,173 @@ export function WorkspaceProvider({
       });
     }
 
+    // 4. Background server sync
+    try {
+      const res = await toggleRevisionAction({ ...opts, clientDeviceId: getClientDeviceId() });
+      if (!res.success || !res.record) throw new Error('Failed to toggle revision');
+      const rec = res.record as unknown as RevisionRecord;
+
+      // Reconcile server record silently
+      setRevisionData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.records.filter(
+          (r) => !(r.topicId === opts.topicId && r.category === opts.category)
+        );
+        const nextRecords = opts.isCompleted ? [...filtered, rec] : filtered;
+        const updated = { ...prev, records: nextRecords };
+        revisionCacheRef.current = updated;
+        return updated;
+      });
+
+      broadcastLocal('revision:toggle', {
+        record: rec,
+        subjectId: opts.subjectId,
+        topicId: opts.topicId,
+        category: opts.category,
+        isCompleted: opts.isCompleted,
+      });
+
+      return rec;
+    } catch (err) {
+      // Rollback on network or server error
+      setRevisionData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.records.filter(
+          (r) => !(r.topicId === opts.topicId && r.category === opts.category)
+        );
+        const nextRecords = wasCompleted && prevRecord ? [...filtered, prevRecord] : filtered;
+        const updated = { ...prev, records: nextRecords };
+        revisionCacheRef.current = updated;
+        return updated;
+      });
+      if (xpDelta !== 0) {
+        setData((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            profile: {
+              ...prev.profile,
+              gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) - xpDelta),
+            },
+          };
+        });
+      }
+      throw err;
+    }
+  }, [user?.uid, revisionData?.records, broadcastLocal]);
+
+  const saveDetailedRevision = useCallback(async (opts: any) => {
+    const prevRecords = revisionCacheRef.current?.records || revisionData?.records || [];
+    const prevRecord = prevRecords.find(
+      (r) => r.id === opts.id || (r.topicId === opts.topicId && r.category === opts.category)
+    );
+    const wasCompleted = prevRecord?.isCompleted ?? false;
+    const isCompleted = opts.isCompleted !== undefined ? opts.isCompleted : true;
+    const nowYmd = opts.activityDate || new Date().toISOString().slice(0, 10);
+
+    // 1. Optimistic record
+    const optimisticRecord: RevisionRecord = {
+      id: opts.id || prevRecord?.id || `temp_${Date.now()}`,
+      userId: user?.uid || 'current',
+      subjectId: opts.subjectId,
+      topicId: opts.topicId,
+      category: opts.category,
+      activityDate: nowYmd,
+      isCompleted,
+      bookName: opts.bookName !== undefined ? opts.bookName : prevRecord?.bookName,
+      pagesRead: opts.pagesRead !== undefined ? opts.pagesRead : prevRecord?.pagesRead,
+      questionsSolved: opts.questionsSolved !== undefined ? opts.questionsSolved : prevRecord?.questionsSolved,
+      correctCount: opts.correctCount !== undefined ? opts.correctCount : prevRecord?.correctCount,
+      notes: opts.notes !== undefined ? opts.notes : prevRecord?.notes,
+      createdAt: prevRecord?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 2. Instantly update context state
     setRevisionData((prev) => {
       if (!prev) return null;
-      const filtered = prev.records.filter((r) => r.id !== rec.id && !(r.topicId === rec.topicId && r.category === rec.category));
-      const nextRecords = [...filtered, rec];
+      const filtered = prev.records.filter(
+        (r) => !(r.topicId === opts.topicId && r.category === opts.category)
+      );
+      const nextRecords = isCompleted ? [...filtered, optimisticRecord] : filtered;
       const updated = { ...prev, records: nextRecords };
       revisionCacheRef.current = updated;
       return updated;
     });
 
-    broadcastLocal('revision:detailed', { record: rec });
-    return rec;
-  }, [revisionData?.records, broadcastLocal]);
+    const xpDelta = !wasCompleted && isCompleted ? 25 : wasCompleted && !isCompleted ? -25 : 0;
+    if (xpDelta !== 0) {
+      setData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) + xpDelta),
+          },
+        };
+      });
+    }
+
+    try {
+      const res = await saveDetailedRevisionRecordAction({ ...opts, clientDeviceId: getClientDeviceId() });
+      if (!res.success || !res.record) throw new Error('Failed to save detailed record');
+      const rec = res.record as unknown as RevisionRecord;
+
+      setRevisionData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.records.filter(
+          (r) => !(r.topicId === opts.topicId && r.category === opts.category)
+        );
+        const nextRecords = isCompleted ? [...filtered, rec] : filtered;
+        const updated = { ...prev, records: nextRecords };
+        revisionCacheRef.current = updated;
+        return updated;
+      });
+
+      broadcastLocal('revision:detailed', { record: rec });
+      return rec;
+    } catch (err) {
+      // Rollback
+      setRevisionData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.records.filter(
+          (r) => !(r.topicId === opts.topicId && r.category === opts.category)
+        );
+        const nextRecords = wasCompleted && prevRecord ? [...filtered, prevRecord] : filtered;
+        const updated = { ...prev, records: nextRecords };
+        revisionCacheRef.current = updated;
+        return updated;
+      });
+      if (xpDelta !== 0) {
+        setData((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            profile: {
+              ...prev.profile,
+              gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) - xpDelta),
+            },
+          };
+        });
+      }
+      throw err;
+    }
+  }, [user?.uid, revisionData?.records, broadcastLocal]);
 
   const deleteRevisionRecordItem = useCallback(async (recordId: string) => {
-    const existing = revisionData?.records.find((r) => r.id === recordId);
+    const prevRecords = revisionCacheRef.current?.records || revisionData?.records || [];
+    const existing = prevRecords.find((r) => r.id === recordId);
+
+    // Optimistic delete
+    setRevisionData((prev) => {
+      if (!prev) return null;
+      const nextRecords = prev.records.filter((r) => r.id !== recordId);
+      const updated = { ...prev, records: nextRecords };
+      revisionCacheRef.current = updated;
+      return updated;
+    });
+
     if (existing?.isCompleted) {
       setData((prev) => {
         if (!prev) return null;
@@ -1500,17 +1650,22 @@ export function WorkspaceProvider({
       });
     }
 
-    await deleteRevisionRecordAction(recordId, getClientDeviceId());
-    setRevisionData((prev) => {
-      if (!prev) return null;
-      const nextRecords = prev.records.filter((r) => r.id !== recordId);
-      const updated = { ...prev, records: nextRecords };
-      revisionCacheRef.current = updated;
-      return updated;
-    });
-
-    broadcastLocal('revision:delete', { recordId });
-  }, [revisionData?.records, broadcastLocal]);
+    try {
+      await deleteRevisionRecordAction(recordId, getClientDeviceId());
+      broadcastLocal('revision:delete', { recordId });
+    } catch (err) {
+      // Rollback
+      if (existing) {
+        setRevisionData((prev) => {
+          if (!prev) return null;
+          const updated = { ...prev, records: [...prev.records, existing] };
+          revisionCacheRef.current = updated;
+          return updated;
+        });
+      }
+      throw err;
+    }
+  }, [user?.uid, revisionData?.records, broadcastLocal]);
 
   const addCustomCurriculumTopicItem = useCallback(async (opts: any) => {
     const res = await addCustomCurriculumTopicAction({ ...opts, clientDeviceId: getClientDeviceId() });

@@ -21,7 +21,6 @@ import {
   CurriculumResourceSchema,
 } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -54,7 +53,6 @@ export async function toggleRevisionAction(raw: unknown) {
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true, record: result };
 }
 
@@ -71,7 +69,6 @@ export async function saveDetailedRevisionRecordAction(raw: unknown) {
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true, record: result };
 }
 
@@ -86,7 +83,6 @@ export async function deleteRevisionRecordAction(id: string, clientDeviceId?: st
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }
 
@@ -105,7 +101,6 @@ export async function addCustomCurriculumTopicAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, topic: result };
 }
 
@@ -124,7 +119,6 @@ export async function addCustomCurriculumSubjectAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, subject: result };
 }
 
@@ -143,7 +137,6 @@ export async function updateCurriculumCustomizationAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, customization: result };
 }
 
@@ -162,7 +155,6 @@ export async function createCurriculumResourceAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, resource };
 }
 
@@ -177,6 +169,5 @@ export async function deleteCurriculumResourceAction(id: string, clientDeviceId?
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }
