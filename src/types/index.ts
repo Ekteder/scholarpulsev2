@@ -13,6 +13,9 @@ export interface Profile {
   pomodoroLongBreakMinutes: number;
   pomodoroLongBreakInterval: number;
   onboardingCompleted: boolean;
+  targetExamName?: string;
+  targetExamDate?: string;
+  gamificationXp?: number;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -140,6 +143,36 @@ export interface NotificationPreferences {
   updatedAt: string | Date;
 }
 
+export interface FlashcardItem {
+  id: string;
+  userId: string;
+  subjectId: string;
+  topicId?: string | null;
+  front: string;
+  back: string;
+  repetitions: number;
+  intervalDays: number;
+  easeFactor: string;
+  nextReviewDate: string; // YYYY-MM-DD
+  lastReviewedAt?: string | Date | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface CurriculumResourceItem {
+  id: string;
+  userId: string;
+  subjectId: string;
+  topicId: string;
+  title: string;
+  url: string;
+  resourceType: 'youtube' | 'drive' | 'pdf' | 'book_ref' | 'link' | string;
+  pageReference?: string | null;
+  notes?: string | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
 export interface WorkspaceData {
   profile: Profile;
   notificationPreferences: NotificationPreferences;
@@ -149,6 +182,7 @@ export interface WorkspaceData {
   tasks: TaskItem[];
   schedules: ScheduleItem[];
   goals: GoalItem[];
+  flashcards: FlashcardItem[];
   achievementsCatalog: AchievementCatalogItem[];
   userAchievements: UserAchievementItem[];
 }
@@ -157,6 +191,7 @@ export type NavigationTab =
   | 'dashboard'
   | 'tracker'
   | 'timer'
+  | 'flashcards'
   | 'revision'
   | 'subjects'
   | 'schedule'
@@ -303,4 +338,5 @@ export interface RevisionWorkspacePayload {
   topics: CurriculumTopic[];
   customizations: UserCurriculumCustomization[];
   records: RevisionRecord[];
+  resources: CurriculumResourceItem[];
 }

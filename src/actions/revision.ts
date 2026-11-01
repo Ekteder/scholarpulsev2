@@ -9,6 +9,8 @@ import {
   addCustomCurriculumTopic,
   addCustomCurriculumSubject,
   updateCurriculumCustomization,
+  createCurriculumResource,
+  deleteCurriculumResource,
 } from '@/lib/db/repository';
 import {
   RevisionToggleSchema,
@@ -16,6 +18,7 @@ import {
   CustomCurriculumTopicSchema,
   CustomCurriculumSubjectSchema,
   CurriculumCustomizationSchema,
+  CurriculumResourceSchema,
 } from '@/lib/validations';
 import { revalidatePath } from 'next/cache';
 
@@ -77,3 +80,19 @@ export async function updateCurriculumCustomizationAction(raw: unknown) {
   revalidatePath('/');
   return { success: true, customization: result };
 }
+
+export async function createCurriculumResourceAction(raw: unknown) {
+  const user = await requireUser();
+  const parsed = CurriculumResourceSchema.parse(raw);
+  const resource = await createCurriculumResource(user.uid, parsed);
+  revalidatePath('/');
+  return { success: true, resource };
+}
+
+export async function deleteCurriculumResourceAction(id: string) {
+  const user = await requireUser();
+  await deleteCurriculumResource(user.uid, id);
+  revalidatePath('/');
+  return { success: true };
+}
+

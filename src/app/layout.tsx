@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import { ThemeProvider } from "@/components/theme-provider";
 
 const plusJakartaSans = Plus_Jakarta_Sans({

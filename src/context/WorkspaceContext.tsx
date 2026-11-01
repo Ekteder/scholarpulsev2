@@ -12,8 +12,10 @@ import React, {
 import {
   ActiveTimerSession,
   CurriculumPaper,
+  CurriculumResourceItem,
   CurriculumSubject,
   CurriculumTopic,
+  FlashcardItem,
   GoalItem,
   NavigationTab,
   NotificationPreferences,
@@ -79,7 +81,15 @@ import {
   addCustomCurriculumTopicAction,
   addCustomCurriculumSubjectAction,
   updateCurriculumCustomizationAction,
+  createCurriculumResourceAction,
+  deleteCurriculumResourceAction,
 } from '../actions/revision';
+import {
+  createFlashcardAction,
+  updateFlashcardAction,
+  deleteFlashcardAction,
+  reviewFlashcardAction,
+} from '../actions/flashcards';
 import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { useTheme } from 'next-themes';
 
@@ -180,6 +190,19 @@ export interface WorkspaceContextValue {
     customTitle?: string;
     customOrder?: number;
   }) => Promise<UserCurriculumCustomization>;
+
+  // Spaced Repetition Flashcards
+  createFlashcard: (payload: any) => Promise<FlashcardItem>;
+  updateFlashcard: (id: string, payload: any) => Promise<FlashcardItem>;
+  deleteFlashcard: (id: string) => Promise<void>;
+  reviewFlashcard: (id: string, grade: 1 | 2 | 3 | 4) => Promise<FlashcardItem>;
+
+  // Chapter Resources
+  createResource: (payload: any) => Promise<CurriculumResourceItem>;
+  deleteResource: (id: string) => Promise<void>;
+
+  // Target Exam Setting
+  updateExamTarget: (examName: string, examDate: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
@@ -674,6 +697,98 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return cust;
   }, []);
 
+  // Spaced Repetition Flashcards
+  const createFlashcard = useCallback(async (payload: any) => {
+    const res = await createFlashcardAction(payload);
+    if (!res.success || !res.flashcard) throw new Error('Failed to create flashcard');
+    const card = res.flashcard as unknown as FlashcardItem;
+    setData((prev) => prev ? { ...prev, flashcards: [...(prev.flashcards || []), card] } : null);
+    addToast({ title: 'Flashcard Created', description: 'Added to your spaced repetition deck.', variant: 'success' });
+    return card;
+  }, [addToast]);
+
+  const updateFlashcard = useCallback(async (id: string, payload: any) => {
+    const res = await updateFlashcardAction(id, payload);
+    if (!res.success || !res.flashcard) throw new Error('Failed to update flashcard');
+    const card = res.flashcard as unknown as FlashcardItem;
+    setData((prev) => prev ? {
+      ...prev,
+      flashcards: (prev.flashcards || []).map((f) => f.id === id ? card : f),
+    } : null);
+    return card;
+  }, []);
+
+  const deleteFlashcard = useCallback(async (id: string) => {
+    await deleteFlashcardAction(id);
+    setData((prev) => prev ? {
+      ...prev,
+      flashcards: (prev.flashcards || []).filter((f) => f.id !== id),
+    } : null);
+    addToast({ title: 'Flashcard Removed', description: 'Deleted from your deck.', variant: 'default' });
+  }, [addToast]);
+
+  const reviewFlashcard = useCallback(async (id: string, grade: 1 | 2 | 3 | 4) => {
+    const res = await reviewFlashcardAction({ id, grade });
+    if (!res.success || !res.flashcard) throw new Error('Failed to review flashcard');
+    const card = res.flashcard as unknown as FlashcardItem;
+    setData((prev) => {
+      if (!prev) return null;
+      const updatedProfile = {
+        ...prev.profile,
+        gamificationXp: (prev.profile.gamificationXp || 0) + 5,
+      };
+      return {
+        ...prev,
+        profile: updatedProfile,
+        flashcards: (prev.flashcards || []).map((f) => f.id === id ? card : f),
+      };
+    });
+    return card;
+  }, []);
+
+  // Chapter Resources
+  const createResource = useCallback(async (payload: any) => {
+    const res = await createCurriculumResourceAction(payload);
+    if (!res.success || !res.resource) throw new Error('Failed to save resource');
+    const resource = res.resource as unknown as CurriculumResourceItem;
+    setRevisionData((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, resources: [resource, ...(prev.resources || [])] };
+      revisionCacheRef.current = updated;
+      return updated;
+    });
+    addToast({ title: 'Resource Saved', description: `Saved: ${resource.title}`, variant: 'success' });
+    return resource;
+  }, [addToast]);
+
+  const deleteResource = useCallback(async (id: string) => {
+    await deleteCurriculumResourceAction(id);
+    setRevisionData((prev) => {
+      if (!prev) return null;
+      const updated = {
+        ...prev,
+        resources: (prev.resources || []).filter((r) => r.id !== id),
+      };
+      revisionCacheRef.current = updated;
+      return updated;
+    });
+    addToast({ title: 'Resource Removed', description: 'Link deleted.', variant: 'default' });
+  }, [addToast]);
+
+  // Target Exam & Burndown settings
+  const updateExamTarget = useCallback(async (targetExamName: string, targetExamDate: string) => {
+    await updateProfileAction({ targetExamName, targetExamDate });
+    setData((prev) => prev ? {
+      ...prev,
+      profile: {
+        ...prev.profile,
+        targetExamName,
+        targetExamDate,
+      },
+    } : null);
+    addToast({ title: 'Exam Target Updated', description: `${targetExamName} set to ${targetExamDate}`, variant: 'success' });
+  }, [addToast, updateProfileAction]);
+
   const value = useMemo<WorkspaceContextValue>(() => ({
     user,
     authLoading,
@@ -721,6 +836,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     addCustomCurriculumTopicItem,
     addCustomCurriculumSubjectItem,
     updateCurriculumCustomizationItem,
+    createFlashcard,
+    updateFlashcard,
+    deleteFlashcard,
+    reviewFlashcard,
+    createResource,
+    deleteResource,
+    updateExamTarget,
   }), [
     user,
     authLoading,
@@ -766,6 +888,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     addCustomCurriculumTopicItem,
     addCustomCurriculumSubjectItem,
     updateCurriculumCustomizationItem,
+    createFlashcard,
+    updateFlashcard,
+    deleteFlashcard,
+    reviewFlashcard,
+    createResource,
+    deleteResource,
+    updateExamTarget,
   ]);
 
   return (

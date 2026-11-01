@@ -5,8 +5,10 @@ import {
   achievements,
   activeTimerSessions,
   curriculumPapers,
+  curriculumResources,
   curriculumSubjects,
   curriculumTopics,
+  flashcards,
   goals,
   notificationPreferences,
   profiles,
@@ -375,6 +377,7 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       userGoals,
       catalogAchievements,
       unlockedAchievements,
+      userFlashcards,
     ] = await Promise.all([
       db
         .select()
@@ -410,6 +413,11 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
         .select()
         .from(userAchievements)
         .where(eq(userAchievements.userId, userId)),
+      db
+        .select()
+        .from(flashcards)
+        .where(eq(flashcards.userId, userId))
+        .orderBy(asc(flashcards.nextReviewDate)),
     ]);
 
     return {
@@ -421,6 +429,7 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       tasks: userTasks,
       schedules: userSchedules,
       goals: userGoals,
+      flashcards: userFlashcards,
       achievementsCatalog: catalogAchievements,
       userAchievements: unlockedAchievements,
     };
@@ -969,7 +978,7 @@ export async function deleteUserAccountTransactional(userId: string) {
 export async function getRevisionWorkspaceData(userId: string) {
   await ensureCurriculumSeedData();
 
-  const [subjectsList, papersList, topicsList, customizationsList, recordsList] =
+  const [subjectsList, papersList, topicsList, customizationsList, recordsList, resourcesList] =
     await Promise.all([
       db
         .select()
@@ -995,6 +1004,11 @@ export async function getRevisionWorkspaceData(userId: string) {
         .from(revisionRecords)
         .where(eq(revisionRecords.userId, userId))
         .orderBy(desc(revisionRecords.updatedAt)),
+      db
+        .select()
+        .from(curriculumResources)
+        .where(eq(curriculumResources.userId, userId))
+        .orderBy(desc(curriculumResources.createdAt)),
     ]);
 
   return {
@@ -1003,6 +1017,7 @@ export async function getRevisionWorkspaceData(userId: string) {
     topics: topicsList,
     customizations: customizationsList,
     records: recordsList,
+    resources: resourcesList,
   };
 }
 
@@ -1640,6 +1655,9 @@ export async function updateUserProfile(
     pomodoroShortBreakMinutes: number;
     pomodoroLongBreakMinutes: number;
     pomodoroLongBreakInterval: number;
+    targetExamName: string;
+    targetExamDate: string;
+    gamificationXp: number;
   }>
 ) {
   const [updated] = await db
@@ -1695,3 +1713,190 @@ export async function updateUserNotificationPreferences(
 
 export const restoreUserDataFromBackup = restoreUserBackupTransactional;
 export const deleteUserEntireAccount = deleteUserAccountTransactional;
+
+// ==============================================================================
+// SPACED REPETITION FLASHCARDS (SM-2 Algorithm)
+// ==============================================================================
+
+export async function createUserFlashcard(
+  userId: string,
+  data: {
+    subjectId: string;
+    topicId?: string | null;
+    front: string;
+    back: string;
+  }
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [created] = await db
+    .insert(flashcards)
+    .values({
+      userId,
+      subjectId: data.subjectId,
+      topicId: data.topicId || null,
+      front: data.front,
+      back: data.back,
+      repetitions: 0,
+      intervalDays: 0,
+      easeFactor: '2.5',
+      nextReviewDate: today,
+    })
+    .returning();
+  return created;
+}
+
+export async function updateUserFlashcard(
+  userId: string,
+  id: string,
+  data: Partial<{
+    subjectId: string;
+    topicId: string | null;
+    front: string;
+    back: string;
+  }>
+) {
+  const [updated] = await db
+    .update(flashcards)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
+    .returning();
+  return updated;
+}
+
+export async function deleteUserFlashcard(userId: string, id: string) {
+  await db
+    .delete(flashcards)
+    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
+}
+
+export async function reviewUserFlashcard(
+  userId: string,
+  id: string,
+  grade: 1 | 2 | 3 | 4
+) {
+  const [card] = await db
+    .select()
+    .from(flashcards)
+    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
+
+  if (!card) {
+    throw new Error('Flashcard not found');
+  }
+
+  const currentRepetitions = card.repetitions;
+  const currentInterval = card.intervalDays;
+  let easeFactorNum = parseFloat(card.easeFactor) || 2.5;
+
+  let newRepetitions = 0;
+  let newInterval = 1;
+
+  if (grade < 3) {
+    // Failure (Again)
+    newRepetitions = 0;
+    newInterval = 1;
+  } else {
+    // Success (Hard, Good, Easy)
+    if (currentRepetitions === 0) {
+      newInterval = 1;
+    } else if (currentRepetitions === 1) {
+      newInterval = grade === 2 ? 3 : 6;
+    } else {
+      const multiplier = grade === 2 ? 1.2 : grade === 4 ? easeFactorNum * 1.3 : easeFactorNum;
+      newInterval = Math.max(1, Math.round(currentInterval * multiplier));
+    }
+    newRepetitions = currentRepetitions + 1;
+  }
+
+  // SM-2 Ease Factor calculation
+  easeFactorNum = Math.max(
+    1.3,
+    easeFactorNum + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02))
+  );
+
+  const nextReviewDate = addDaysToYmd(new Date().toISOString().slice(0, 10), newInterval);
+
+  const [updated] = await db
+    .update(flashcards)
+    .set({
+      repetitions: newRepetitions,
+      intervalDays: newInterval,
+      easeFactor: easeFactorNum.toFixed(2),
+      nextReviewDate,
+      lastReviewedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
+    .returning();
+
+  // Award 5 XP for reviewing
+  await awardUserXp(userId, 5);
+
+  return updated;
+}
+
+// ==============================================================================
+// CHAPTER RESOURCES & BOOKMARKING
+// ==============================================================================
+
+export async function createCurriculumResource(
+  userId: string,
+  data: {
+    subjectId: string;
+    topicId: string;
+    title: string;
+    url: string;
+    resourceType?: string;
+    pageReference?: string;
+    notes?: string;
+  }
+) {
+  const [created] = await db
+    .insert(curriculumResources)
+    .values({
+      userId,
+      subjectId: data.subjectId,
+      topicId: data.topicId,
+      title: data.title,
+      url: data.url,
+      resourceType: data.resourceType || 'link',
+      pageReference: data.pageReference || '',
+      notes: data.notes || '',
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteCurriculumResource(userId: string, id: string) {
+  await db
+    .delete(curriculumResources)
+    .where(and(eq(curriculumResources.id, id), eq(curriculumResources.userId, userId)));
+}
+
+// ==============================================================================
+// RPG GAMIFICATION XP ENGINE
+// ==============================================================================
+
+export async function awardUserXp(userId: string, amount: number) {
+  const [profile] = await db
+    .select({ gamificationXp: profiles.gamificationXp })
+    .from(profiles)
+    .where(eq(profiles.userId, userId));
+
+  const currentXp = profile?.gamificationXp || 0;
+  const newXp = Math.max(0, currentXp + amount);
+
+  const [updated] = await db
+    .update(profiles)
+    .set({
+      gamificationXp: newXp,
+      updatedAt: new Date(),
+    })
+    .where(eq(profiles.userId, userId))
+    .returning();
+
+  return updated;
+}
+

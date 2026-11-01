@@ -5,6 +5,7 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import {
   CurriculumSubject,
   CurriculumPaper,
+  CurriculumResourceItem,
   CurriculumTopic,
   RevisionCategory,
   RevisionRecord,
@@ -12,6 +13,7 @@ import {
   RevisionWorkspacePayload,
   UserCurriculumCustomization,
 } from '@/types/index';
+import { MathRenderer } from './MathRenderer';
 import {
   BookOpenCheck,
   Check,
@@ -38,6 +40,10 @@ import {
   ChevronRight,
   TrendingUp,
   Percent,
+  ExternalLink,
+  Video,
+  Link as LinkIcon,
+  Bookmark,
 } from 'lucide-react';
 
 const CATEGORY_ICONS: Record<RevisionCategory, React.ComponentType<{ className?: string }>> = {
@@ -61,8 +67,18 @@ export function RevisionTrackerView() {
     addCustomCurriculumTopicItem,
     addCustomCurriculumSubjectItem,
     updateCurriculumCustomizationItem,
+    createResource,
+    deleteResource,
     addToast,
   } = useWorkspace();
+
+  const [detailTab, setDetailTab] = useState<'log' | 'resources'>('log');
+  const [resTitle, setResTitle] = useState('');
+  const [resUrl, setResUrl] = useState('');
+  const [resType, setResType] = useState<string>('link');
+  const [resPageRef, setResPageRef] = useState('');
+  const [resNotes, setResNotes] = useState('');
+  const [savingRes, setSavingRes] = useState(false);
 
   const [loading, setLoading] = useState(!revisionData);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +108,34 @@ export function RevisionTrackerView() {
     category: RevisionCategory;
     record?: RevisionRecord;
   } | null>(null);
+
+  const topicResources = useMemo(() => {
+    if (!activeDetailItem || !revisionData?.resources) return [];
+    return revisionData.resources.filter((r) => r.topicId === activeDetailItem.topic.id);
+  }, [activeDetailItem, revisionData?.resources]);
+
+  const handleSaveResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeDetailItem || !resTitle.trim() || !resUrl.trim()) return;
+    setSavingRes(true);
+    try {
+      await createResource({
+        subjectId: activeDetailItem.subject.id,
+        topicId: activeDetailItem.topic.id,
+        title: resTitle.trim(),
+        url: resUrl.trim(),
+        resourceType: resType,
+        pageReference: resPageRef.trim(),
+        notes: resNotes.trim(),
+      });
+      setResTitle('');
+      setResUrl('');
+      setResPageRef('');
+      setResNotes('');
+    } finally {
+      setSavingRes(false);
+    }
+  };
 
   const [addTopicModalOpen, setAddTopicModalOpen] = useState(false);
   const [addTopicPaperId, setAddTopicPaperId] = useState('');
@@ -1497,213 +1541,403 @@ export function RevisionTrackerView() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveDetailModal} className="space-y-3.5 text-xs">
-              {/* Completed Status Checkbox */}
-              <label className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={detailIsCompleted}
-                  onChange={(e) => setDetailIsCompleted(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600"
-                />
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  Mark this category activity as completed
-                </span>
-              </label>
+            {/* Modal Tabs: Activity Log vs Chapter Resources */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setDetailTab('log')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                  detailTab === 'log'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Activity Details
+              </button>
+              <button
+                type="button"
+                onClick={() => setDetailTab('resources')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                  detailTab === 'resources'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <Bookmark className="w-3.5 h-3.5 text-blue-500" />
+                <span>Chapter Resources ({topicResources.length})</span>
+              </button>
+            </div>
 
-              {/* Activity Date */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  Activity Date
-                </label>
-                <input
-                  type="date"
-                  value={detailActivityDate}
-                  onChange={(e) => setDetailActivityDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 font-mono text-xs text-slate-900 dark:text-white"
-                />
-              </div>
+            {detailTab === 'resources' ? (
+              <div className="space-y-4 text-xs">
+                {/* Existing Resources for this Topic */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                    Attached Chapter Bookmarks & Links
+                  </h4>
+                  {topicResources.length === 0 ? (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-slate-400">
+                      No bookmarks saved yet. Add YouTube playlists, Drive PDFs, or book pages below.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {topicResources.map((res) => (
+                        <div
+                          key={res.id}
+                          className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100 truncate">
+                              {res.resourceType === 'youtube' && <Video className="w-4 h-4 text-red-500 shrink-0" />}
+                              {res.resourceType === 'drive' && <Bookmark className="w-4 h-4 text-amber-500 shrink-0" />}
+                              {res.resourceType === 'pdf' && <FileText className="w-4 h-4 text-rose-500 shrink-0" />}
+                              {res.resourceType === 'book_ref' && <BookOpen className="w-4 h-4 text-emerald-500 shrink-0" />}
+                              {res.resourceType === 'link' && <LinkIcon className="w-4 h-4 text-blue-500 shrink-0" />}
+                              <span className="truncate">{res.title}</span>
+                            </div>
+                            {res.pageReference && (
+                              <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+                                Ref: {res.pageReference}
+                              </p>
+                            )}
+                            {res.notes && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                {res.notes}
+                              </p>
+                            )}
+                          </div>
 
-              {/* Category-Specific Detailed Fields */}
-              {activeDetailItem.category === 'book_reading' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      Book / Reference Name
-                    </label>
-                    <input
-                      type="text"
-                      value={detailBookName}
-                      onChange={(e) => setDetailBookName(e.target.value)}
-                      placeholder="e.g. হাজারী ও নাগ, সেলিনা হোসেন"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      Pages Read
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={detailPagesRead}
-                      onChange={(e) =>
-                        setDetailPagesRead(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      placeholder="e.g. 24"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
-                    />
-                  </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <a
+                              href={res.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 transition-colors"
+                              title="Open Resource Link"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => deleteResource(res.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                              title="Delete Link"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {activeDetailItem.category === 'mcq_exam' && (
-                <div className="grid grid-cols-2 gap-3">
+                {/* Add Resource Form */}
+                <form onSubmit={handleSaveResource} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 space-y-3">
+                  <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Add New Resource or Bookmark
+                  </h5>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Resource Title
+                      </label>
+                      <input
+                        type="text"
+                        value={resTitle}
+                        onChange={(e) => setResTitle(e.target.value)}
+                        placeholder="e.g. YouTube Playlist, Lecture PDF"
+                        required
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Resource Type
+                      </label>
+                      <select
+                        value={resType}
+                        onChange={(e) => setResType(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+                      >
+                        <option value="youtube">YouTube Video / Playlist</option>
+                        <option value="drive">Google Drive Link</option>
+                        <option value="pdf">PDF Document / Note</option>
+                        <option value="book_ref">Textbook Page Reference</option>
+                        <option value="link">Web Resource / Article</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      Total MCQ Questions
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      URL Link
                     </label>
                     <input
-                      type="number"
-                      min={0}
-                      value={detailQuestionsSolved}
-                      onChange={(e) =>
-                        setDetailQuestionsSolved(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      placeholder="e.g. 30"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      type="url"
+                      value={resUrl}
+                      onChange={(e) => setResUrl(e.target.value)}
+                      placeholder="https://..."
+                      required
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-mono"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      Correct Answers / Score
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={detailCorrectCount}
-                      onChange={(e) =>
-                        setDetailCorrectCount(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      placeholder="e.g. 28"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
-                    />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Page Reference (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={resPageRef}
+                        onChange={(e) => setResPageRef(e.target.value)}
+                        placeholder="e.g. Page 120-145"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={resNotes}
+                        onChange={(e) => setResNotes(e.target.value)}
+                        placeholder="e.g. Best lecture for CQ solving"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {activeDetailItem.category === 'cq_solve' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      CQ Questions Attempted
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={detailQuestionsSolved}
-                      onChange={(e) =>
-                        setDetailQuestionsSolved(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      placeholder="e.g. 8"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                      Correctly Solved
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={detailCorrectCount}
-                      onChange={(e) =>
-                        setDetailCorrectCount(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      placeholder="e.g. 7"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeDetailItem.category === 'test_paper_solving' && (
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    Questions / Sets Solved (On your own)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={detailQuestionsSolved}
-                    onChange={(e) =>
-                      setDetailQuestionsSolved(
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                    placeholder="e.g. 5 board sets"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
-                  />
-                </div>
-              )}
-
-              {/* Revision Notes */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  Notes & Key Takeaways
-                </label>
-                <textarea
-                  rows={3}
-                  value={detailNotes}
-                  onChange={(e) => setDetailNotes(e.target.value)}
-                  placeholder="Formulas revised, tricky concepts, questions that need re-practice..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-2">
-                {activeDetailItem.record ? (
-                  <button
-                    type="button"
-                    onClick={handleDeleteRecord}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 font-semibold text-xs cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Reset Record</span>
-                  </button>
-                ) : (
-                  <div />
-                )}
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDetailModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
                   <button
                     type="submit"
-                    disabled={isSavingDetail}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer disabled:opacity-50"
+                    disabled={savingRes}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-xs transition-colors"
                   >
-                    {isSavingDetail ? 'Saving...' : 'Save Activity'}
+                    {savingRes ? 'Saving Link...' : 'Save Chapter Bookmark'}
                   </button>
-                </div>
+                </form>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handleSaveDetailModal} className="space-y-3.5 text-xs">
+                {/* Completed Status Checkbox */}
+                <label className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={detailIsCompleted}
+                    onChange={(e) => setDetailIsCompleted(e.target.checked)}
+                    className="w-4 h-4 rounded text-blue-600"
+                  />
+                  <span className="font-semibold text-slate-900 dark:text-white">
+                    Mark this category activity as completed
+                  </span>
+                </label>
+
+                {/* Activity Date */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                    Activity Date
+                  </label>
+                  <input
+                    type="date"
+                    value={detailActivityDate}
+                    onChange={(e) => setDetailActivityDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 font-mono text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                {/* Category-Specific Detailed Fields */}
+                {activeDetailItem.category === 'book_reading' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Book / Reference Name
+                      </label>
+                      <input
+                        type="text"
+                        value={detailBookName}
+                        onChange={(e) => setDetailBookName(e.target.value)}
+                        placeholder="e.g. হাজারী ও নাগ, সেলিনা হোসেন"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Pages Read
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailPagesRead}
+                        onChange={(e) =>
+                          setDetailPagesRead(
+                            e.target.value === '' ? '' : Number(e.target.value)
+                          )
+                        }
+                        placeholder="e.g. 24"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailItem.category === 'mcq_exam' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Total MCQ Questions
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailQuestionsSolved}
+                        onChange={(e) =>
+                          setDetailQuestionsSolved(
+                            e.target.value === '' ? '' : Number(e.target.value)
+                          )
+                        }
+                        placeholder="e.g. 30"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Correct Answers
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailCorrectCount}
+                        onChange={(e) =>
+                          setDetailCorrectCount(
+                            e.target.value === '' ? '' : Number(e.target.value)
+                          )
+                        }
+                        placeholder="e.g. 27"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailItem.category === 'cq_solve' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        CQ Questions Attempted
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailQuestionsSolved}
+                        onChange={(e) =>
+                          setDetailQuestionsSolved(
+                            e.target.value === '' ? '' : Number(e.target.value)
+                          )
+                        }
+                        placeholder="e.g. 8"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Correctly Solved
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={detailCorrectCount}
+                        onChange={(e) =>
+                          setDetailCorrectCount(
+                            e.target.value === '' ? '' : Number(e.target.value)
+                          )
+                        }
+                        placeholder="e.g. 7"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailItem.category === 'test_paper_solving' && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      Questions / Sets Solved (On your own)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={detailQuestionsSolved}
+                      onChange={(e) =>
+                        setDetailQuestionsSolved(
+                          e.target.value === '' ? '' : Number(e.target.value)
+                        )
+                      }
+                      placeholder="e.g. 5 board sets"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white tabular-nums"
+                    />
+                  </div>
+                )}
+
+                {/* Revision Notes with KaTeX Preview */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      Notes & Key Takeaways
+                    </label>
+                    <span className="text-[10px] text-slate-400">Math KaTeX supported e.g. $E = mc^2$</span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={detailNotes}
+                    onChange={(e) => setDetailNotes(e.target.value)}
+                    placeholder="Formulas revised, tricky concepts, questions that need re-practice..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-mono"
+                  />
+                  {detailNotes && (
+                    <div className="mt-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">Formula Preview:</span>
+                      <MathRenderer content={detailNotes} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between pt-2">
+                  {activeDetailItem.record ? (
+                    <button
+                      type="button"
+                      onClick={handleDeleteRecord}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 font-semibold text-xs cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Reset Record</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDetailModalOpen(false)}
+                      className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingDetail}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingDetail ? 'Saving...' : 'Save Activity'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

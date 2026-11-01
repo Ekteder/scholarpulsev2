@@ -5,6 +5,7 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { useTimer } from '@/context/TimerContext';
 import { formatDigitalClock } from '@/lib/timezone';
 import { Pause, Play, Square, Maximize2, Timer } from 'lucide-react';
+import { AmbientNoiseMixer } from './AmbientNoiseMixer';
 
 export function FloatingMiniTimer() {
   const { activeTab, setActiveTab, data } = useWorkspace();
@@ -60,6 +61,8 @@ export function FloatingMiniTimer() {
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
+        <AmbientNoiseMixer compact />
+
         {activeTimer.status === 'running' ? (
           <button
             type="button"

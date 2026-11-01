@@ -9,8 +9,10 @@ import {
   getDayOfWeekInTz,
   getMinutesBetweenHHMM,
   toDateStringInTz,
+  toTimeStringInTz,
 } from '@/lib/timezone';
 import { HeatmapWidget } from './HeatmapWidget';
+import { generatePdfDossier } from '@/lib/pdfDossier';
 import {
   REVISION_CATEGORIES,
   RevisionWorkspacePayload,
@@ -40,6 +42,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileDown,
+  Moon,
+  Sparkles,
+  Sun,
+  Sunrise,
+  Sunset,
   TrendingUp,
 } from 'lucide-react';
 
@@ -378,6 +386,91 @@ export function AnalyticsView() {
     };
   }, [schedules, subjects, periodSessions, startYmd, dayCount]);
 
+  // Time-of-Day Productivity Analysis (Morning, Afternoon, Evening, Night)
+  const timeOfDayData = useMemo(() => {
+    const brackets = [
+      {
+        key: 'morning',
+        name: 'Morning',
+        timeRange: '06:00 – 11:59',
+        icon: Sunrise,
+        color: '#F59E0B',
+        seconds: 0,
+        sessionCount: 0,
+        totalRating: 0,
+      },
+      {
+        key: 'afternoon',
+        name: 'Afternoon',
+        timeRange: '12:00 – 16:59',
+        icon: Sun,
+        color: '#3B82F6',
+        seconds: 0,
+        sessionCount: 0,
+        totalRating: 0,
+      },
+      {
+        key: 'evening',
+        name: 'Evening',
+        timeRange: '17:00 – 20:59',
+        icon: Sunset,
+        color: '#8B5CF6',
+        seconds: 0,
+        sessionCount: 0,
+        totalRating: 0,
+      },
+      {
+        key: 'night',
+        name: 'Night',
+        timeRange: '21:00 – 05:59',
+        icon: Moon,
+        color: '#6366F1',
+        seconds: 0,
+        sessionCount: 0,
+        totalRating: 0,
+      },
+    ];
+
+    for (const sess of periodSessions) {
+      const timeStr = toTimeStringInTz(sess.startTime, timezone);
+      const hour = parseInt(timeStr.split(':')[0], 10);
+      let idx = 3; // Night (21:00 - 05:59)
+      if (hour >= 6 && hour < 12) {
+        idx = 0; // Morning
+      } else if (hour >= 12 && hour < 17) {
+        idx = 1; // Afternoon
+      } else if (hour >= 17 && hour < 21) {
+        idx = 2; // Evening
+      }
+
+      brackets[idx].seconds += sess.durationSeconds;
+      brackets[idx].sessionCount += 1;
+      const rating = sess.productivityRating && sess.productivityRating > 0 ? sess.productivityRating : 4;
+      brackets[idx].totalRating += rating;
+    }
+
+    const rows = brackets.map((b) => {
+      const hours = Number((b.seconds / 3600).toFixed(2));
+      const avgRating = b.sessionCount > 0 ? Number((b.totalRating / b.sessionCount).toFixed(1)) : 0;
+      return {
+        ...b,
+        hours,
+        avgRating,
+      };
+    });
+
+    const activeRows = rows.filter((r) => r.sessionCount > 0);
+    const peak =
+      activeRows.length > 0
+        ? [...activeRows].sort((a, b) => b.avgRating - a.avgRating || b.hours - a.hours)[0]
+        : null;
+
+    return {
+      rows,
+      peak,
+    };
+  }, [periodSessions, timezone]);
+
   // Weekly Summary Report Data (Selected 7-day week vs. Previous 7-day week)
   const weeklyReport = useMemo(() => {
     const weekEnd = addDaysToYmd(todayYmd, reportWeekOffset * 7);
@@ -518,27 +611,38 @@ export function AnalyticsView() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-            {[
-              { id: 'overview', label: 'Charts & Trends' },
-              { id: 'planned_vs_actual', label: 'Planned vs. Actual' },
-              { id: 'weekly_reports', label: 'Weekly Reports' },
-              { id: 'heatmap', label: 'Yearly Heatmap' },
-              { id: 'revision', label: 'Revision Progress' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSubView(tab.id as any)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                  subView === tab.id
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => generatePdfDossier(data)}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              <span>Export Dossier (PDF)</span>
+            </button>
+
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              {[
+                { id: 'overview', label: 'Charts & Trends' },
+                { id: 'planned_vs_actual', label: 'Planned vs. Actual' },
+                { id: 'weekly_reports', label: 'Weekly Reports' },
+                { id: 'heatmap', label: 'Yearly Heatmap' },
+                { id: 'revision', label: 'Revision Progress' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSubView(tab.id as any)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                    subView === tab.id
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -868,6 +972,111 @@ export function AnalyticsView() {
                     ))}
                   </Bar>
                 </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* G. Productivity vs. Time-of-Day Analytics */}
+          <div className="lg:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="font-display text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>G. Productivity vs. Time-of-Day Analysis</span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Study duration and average focus ratings across Morning, Afternoon, Evening, and Night
+                </p>
+              </div>
+              {timeOfDayData.peak && (
+                <div className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Peak Focus Bracket: {timeOfDayData.peak.name} ({timeOfDayData.peak.avgRating}/5.0 Focus Score)</span>
+                </div>
+              )}
+            </div>
+
+            {/* 4 Bracket Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {timeOfDayData.rows.map((b) => {
+                const Icon = b.icon;
+                return (
+                  <div
+                    key={b.key}
+                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Icon className="w-4 h-4 text-slate-500" />
+                        {b.name}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400">{b.timeRange}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between pt-1">
+                      <div className="font-mono tabular-nums text-xl font-bold text-slate-900 dark:text-white">
+                        {b.hours}h
+                      </div>
+                      <div className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                        {b.sessionCount} {b.sessionCount === 1 ? 'session' : 'sessions'}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                      <span className="text-slate-500">Avg Focus Rating:</span>
+                      <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                        {b.avgRating > 0 ? `${b.avgRating} / 5.0` : 'No data'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Dual Axis Chart */}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={timeOfDayData.rows}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.2} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 11 }}
+                    unit="h"
+                    label={{ value: 'Hours', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#64748b' } }}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={[0, 5]}
+                    tick={{ fontSize: 11 }}
+                    unit="/5"
+                    label={{ value: 'Rating', angle: 90, position: 'insideRight', style: { fontSize: 11, fill: '#64748b' } }}
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [
+                      name === 'Studied Hours' ? `${value} hrs` : `${value} / 5.0`,
+                      String(name || ''),
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="hours"
+                    name="Studied Hours"
+                    fill="#2563EB"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={48}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="avgRating"
+                    name="Avg Focus Rating (1-5)"
+                    stroke="#F59E0B"
+                    strokeWidth={3}
+                    dot={{ r: 5, fill: '#F59E0B' }}
+                    activeDot={{ r: 7 }}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>

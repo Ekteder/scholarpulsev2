@@ -6,15 +6,21 @@ import { useTimer } from '@/context/TimerContext';
 import { formatDigitalClock, formatDurationHuman } from '@/lib/timezone';
 import {
   CheckCircle2,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   RotateCcw,
   Settings2,
+  ShieldCheck,
   SkipForward,
   Square,
   Timer,
+  Volume2,
   X,
 } from 'lucide-react';
+import { AmbientNoiseMixer } from './AmbientNoiseMixer';
+import { MathRenderer } from './MathRenderer';
 
 export function StudyTimerView() {
   const { data, updateProfile, setActiveTab } = useWorkspace();
@@ -64,6 +70,79 @@ export function StudyTimerView() {
   const [finishNotes, setFinishNotes] = useState('');
   const [savingFinish, setSavingFinish] = useState(false);
 
+  // Zen Mode & Screen Wake Lock
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+  const [zenNoiseOpen, setZenNoiseOpen] = useState(false);
+  const wakeLockRef = React.useRef<any>(null);
+
+  const requestWakeLock = React.useCallback(async () => {
+    if (typeof window !== 'undefined' && 'wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        setWakeLockActive(true);
+        wakeLockRef.current.addEventListener('release', () => {
+          setWakeLockActive(false);
+        });
+      } catch (err) {
+        console.warn('Screen Wake Lock request failed:', err);
+      }
+    }
+  }, []);
+
+  const releaseWakeLock = React.useCallback(async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        setWakeLockActive(false);
+      } catch (err) {
+        console.warn('Screen Wake Lock release failed:', err);
+      }
+    }
+  }, []);
+
+  const toggleZenMode = React.useCallback(async () => {
+    if (!isZenMode) {
+      setIsZenMode(true);
+      await requestWakeLock();
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {}
+    } else {
+      setIsZenMode(false);
+      await releaseWakeLock();
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+      } catch {}
+    }
+  }, [isZenMode, requestWakeLock, releaseWakeLock]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && isZenMode) {
+        requestWakeLock();
+      }
+    };
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isZenMode) {
+        setIsZenMode(false);
+        releaseWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isZenMode, requestWakeLock, releaseWakeLock]);
+
   useEffect(() => {
     if (activeTimer) {
       setMode(activeTimer.mode === 'stopwatch' ? 'stopwatch' : 'pomodoro');
@@ -101,7 +180,7 @@ export function StudyTimerView() {
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - progressRatio * circumference;
 
-  const handleStart = async () => {
+  const handleStart = React.useCallback(async () => {
     if (!selectedSubjectId) return;
     await startTimer({
       subjectId: selectedSubjectId,
@@ -109,7 +188,42 @@ export function StudyTimerView() {
       notes: notes.trim(),
       mode,
     });
-  };
+  }, [selectedSubjectId, startTimer, topic, notes, mode]);
+
+  // Global Keyboard Shortcuts for distraction-free study
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (activeTimer) {
+          if (activeTimer.status === 'running') pauseTimer();
+          else resumeTimer();
+        } else {
+          handleStart();
+        }
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleZenMode();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        if (activeTimer) resetTimer();
+      } else if (e.key === 'Escape' && isZenMode) {
+        e.preventDefault();
+        toggleZenMode();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTimer, isZenMode, toggleZenMode, pauseTimer, resumeTimer, resetTimer, handleStart]);
 
   const handleOpenFinishModal = () => {
     if (!activeTimer) return;
@@ -202,23 +316,35 @@ export function StudyTimerView() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowConfigModal(true)}
-            className="w-full sm:w-auto justify-center px-3 sm:px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Settings2 className="w-3.5 h-3.5" />
-            <span>
-              <span className="sm:hidden">
-                Settings ({data.profile.pomodoroFocusMinutes}/{data.profile.pomodoroShortBreakMinutes}m)
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={toggleZenMode}
+              className="flex-1 sm:flex-initial justify-center px-3 sm:px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-900 hover:text-white dark:hover:bg-slate-100 dark:hover:text-slate-900 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title="Fullscreen Zen Mode with Screen Wake Lock"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
+              <span>Zen Mode (F)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowConfigModal(true)}
+              className="flex-1 sm:flex-initial justify-center px-3 sm:px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>
+                <span className="sm:hidden">
+                  Settings ({data.profile.pomodoroFocusMinutes}/{data.profile.pomodoroShortBreakMinutes}m)
+                </span>
+                <span className="hidden sm:inline">
+                  Pomodoro Settings ({data.profile.pomodoroFocusMinutes}/
+                  {data.profile.pomodoroShortBreakMinutes}/
+                  {data.profile.pomodoroLongBreakMinutes}m)
+                </span>
               </span>
-              <span className="hidden sm:inline">
-                Pomodoro Settings ({data.profile.pomodoroFocusMinutes}/
-                {data.profile.pomodoroShortBreakMinutes}/
-                {data.profile.pomodoroLongBreakMinutes}m)
-              </span>
-            </span>
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* Center Clock Display */}
@@ -445,6 +571,149 @@ export function StudyTimerView() {
           </div>
         </div>
       </div>
+
+      {/* Browser-Synthesized Ambient Noise Mixer */}
+      <AmbientNoiseMixer />
+
+      {/* FULLSCREEN AMOLED ZEN MODE VIEW */}
+      {isZenMode && (
+        <div className="fixed inset-0 z-50 bg-[#000000] text-white flex flex-col justify-between p-6 sm:p-10 animate-in fade-in select-none">
+          {/* Zen Top Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span
+                className="w-3.5 h-3.5 rounded-full animate-pulse"
+                style={{ backgroundColor: currentSubject?.color || '#2563EB' }}
+              />
+              <div className="space-y-0.5">
+                <span className="text-sm font-bold tracking-wide text-neutral-200">
+                  {currentSubject?.name || 'Study Focus'}
+                </span>
+                {activeTimer?.topic && (
+                  <p className="text-xs text-neutral-400 font-medium">
+                    {activeTimer.topic}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {wakeLockActive && (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-[11px] font-medium text-emerald-400">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Screen Kept Awake</span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setZenNoiseOpen(!zenNoiseOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs text-neutral-300 transition-colors"
+                title="Ambient Sound Mixer"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-blue-400" />
+                <span>Ambient Noise</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleZenMode}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-xs font-semibold text-neutral-200 transition-colors"
+                title="Exit Fullscreen Zen Mode (Esc or F)"
+              >
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>Exit Zen (Esc)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Ambient Noise Drawer in Zen Mode */}
+          {zenNoiseOpen && (
+            <div className="max-w-md mx-auto w-full z-10 animate-in slide-in-from-top-4">
+              <AmbientNoiseMixer />
+            </div>
+          )}
+
+          {/* Center Giant AMOLED Clock */}
+          <div className="my-auto flex flex-col items-center justify-center text-center space-y-6">
+            {isPomodoro && (
+              <div className="text-xs uppercase tracking-widest font-bold text-neutral-500">
+                {activeTimer?.phase === 'focus' ? '🎯 Focus Session' : '☕ Break Period'}
+              </div>
+            )}
+
+            <div className="font-mono text-7xl sm:text-9xl md:text-[11rem] font-bold tracking-tight text-white drop-shadow-[0_0_40px_rgba(37,99,235,0.3)]">
+              {formatDigitalClock(displaySeconds, displaySeconds >= 3600)}
+            </div>
+
+            {/* Zen Mode Primary Action Controls */}
+            <div className="flex items-center gap-3.5 pt-2">
+              {!activeTimer ? (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  className="px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm sm:text-base flex items-center gap-2 shadow-lg shadow-blue-500/30 transition-all active:scale-95"
+                >
+                  <Play className="w-5 h-5 fill-current" />
+                  <span>Start (Space)</span>
+                </button>
+              ) : (
+                <>
+                  {isRunning ? (
+                    <button
+                      type="button"
+                      onClick={pauseTimer}
+                      className="px-8 py-3.5 rounded-2xl bg-amber-500/20 border border-amber-500/50 hover:bg-amber-500/30 text-amber-300 font-bold text-sm sm:text-base flex items-center gap-2 transition-all active:scale-95"
+                    >
+                      <Pause className="w-5 h-5 fill-current" />
+                      <span>Pause (Space)</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={resumeTimer}
+                      className="px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm sm:text-base flex items-center gap-2 shadow-lg shadow-blue-500/30 transition-all active:scale-95"
+                    >
+                      <Play className="w-5 h-5 fill-current" />
+                      <span>Resume (Space)</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleOpenFinishModal}
+                    className="px-6 py-3.5 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 hover:bg-emerald-600/30 text-emerald-300 font-semibold text-sm flex items-center gap-2 transition-all active:scale-95"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                    <span>Finish</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetTimer}
+                    className="px-5 py-3.5 rounded-2xl bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-400 hover:text-white font-semibold text-sm flex items-center gap-2 transition-all"
+                    title="Reset Timer (R)"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Reset (R)</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Shortcuts Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-neutral-500 border-t border-neutral-900/80 pt-4">
+            <div className="flex items-center gap-3 text-[11px]">
+              <span><kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 font-mono">Space</kbd> Pause/Resume</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 font-mono">F</kbd> Fullscreen</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 font-mono">R</kbd> Reset</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 font-mono">Esc</kbd> Exit</span>
+            </div>
+            <span className="text-[11px] text-neutral-500">AMOLED True Black #000000 • Screen Sleep Disabled</span>
+          </div>
+        </div>
+      )}
 
       {/* Session Summary Confirmation Modal */}
       {showFinishModal && activeTimer && (

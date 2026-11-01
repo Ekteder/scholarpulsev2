@@ -28,6 +28,9 @@ export const profiles = pgTable(
     pomodoroLongBreakMinutes: integer('pomodoro_long_break_minutes').notNull().default(15),
     pomodoroLongBreakInterval: integer('pomodoro_long_break_interval').notNull().default(4),
     onboardingCompleted: boolean('onboarding_completed').notNull().default(false),
+    targetExamName: text('target_exam_name').notNull().default('HSC 2026'),
+    targetExamDate: text('target_exam_date').notNull().default('2026-06-15'),
+    gamificationXp: integer('gamification_xp').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -424,3 +427,76 @@ export const revisionRecordsRelations = relations(revisionRecords, ({ one }) => 
     references: [curriculumSubjects.id],
   }),
 }));
+
+// 16. Flashcards table (Spaced Repetition SM-2)
+export const flashcards = pgTable(
+  'flashcards',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id').notNull(),
+    subjectId: uuid('subject_id')
+      .notNull()
+      .references(() => subjects.id, { onDelete: 'cascade' }),
+    topicId: uuid('topic_id'),
+    front: text('front').notNull(),
+    back: text('back').notNull(),
+    repetitions: integer('repetitions').notNull().default(0),
+    intervalDays: integer('interval_days').notNull().default(0),
+    easeFactor: text('ease_factor').notNull().default('2.5'),
+    nextReviewDate: text('next_review_date').notNull(), // YYYY-MM-DD
+    lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('flashcards_user_id_idx').on(table.userId),
+    index('flashcards_subject_id_idx').on(table.subjectId),
+    index('flashcards_review_date_idx').on(table.userId, table.nextReviewDate),
+  ]
+);
+
+export const flashcardsRelations = relations(flashcards, ({ one }) => ({
+  subject: one(subjects, {
+    fields: [flashcards.subjectId],
+    references: [subjects.id],
+  }),
+}));
+
+// 17. Curriculum Resources & Bookmarking table
+export const curriculumResources = pgTable(
+  'curriculum_resources',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id').notNull(),
+    subjectId: uuid('subject_id')
+      .notNull()
+      .references(() => curriculumSubjects.id, { onDelete: 'cascade' }),
+    topicId: uuid('topic_id')
+      .notNull()
+      .references(() => curriculumTopics.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    url: text('url').notNull(),
+    resourceType: text('resource_type').notNull().default('link'), // 'youtube' | 'drive' | 'pdf' | 'book_ref' | 'link'
+    pageReference: text('page_reference').default(''),
+    notes: text('notes').default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('curriculum_resources_user_idx').on(table.userId),
+    index('curriculum_resources_topic_idx').on(table.topicId),
+    index('curriculum_resources_subject_idx').on(table.subjectId),
+  ]
+);
+
+export const curriculumResourcesRelations = relations(curriculumResources, ({ one }) => ({
+  topic: one(curriculumTopics, {
+    fields: [curriculumResources.topicId],
+    references: [curriculumTopics.id],
+  }),
+  subject: one(curriculumSubjects, {
+    fields: [curriculumResources.subjectId],
+    references: [curriculumSubjects.id],
+  }),
+}));
+

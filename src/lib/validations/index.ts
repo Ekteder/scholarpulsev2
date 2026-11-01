@@ -32,6 +32,9 @@ export const ProfileUpdateSchema = z.object({
   pomodoroShortBreakMinutes: z.number().int().min(1).max(60).optional(),
   pomodoroLongBreakMinutes: z.number().int().min(1).max(90).optional(),
   pomodoroLongBreakInterval: z.number().int().min(1).max(12).optional(),
+  targetExamName: z.string().max(100).optional(),
+  targetExamDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  gamificationXp: z.number().int().min(0).optional(),
 });
 
 export const NotificationPreferencesSchema = z.object({
@@ -157,3 +160,26 @@ export const CurriculumCustomizationSchema = z.object({
   customTitle: z.string().max(200).optional().nullable(),
   customOrder: z.number().int().optional().nullable(),
 });
+
+export const FlashcardSchema = z.object({
+  subjectId: z.string().uuid('Valid subject ID is required'),
+  topicId: z.string().uuid().optional().nullable(),
+  front: z.string().min(1, 'Front side cannot be empty').max(5000),
+  back: z.string().min(1, 'Back side cannot be empty').max(5000),
+});
+
+export const FlashcardReviewSchema = z.object({
+  id: z.string().uuid('Valid card ID is required'),
+  grade: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+});
+
+export const CurriculumResourceSchema = z.object({
+  subjectId: z.string().uuid('Valid subject ID is required'),
+  topicId: z.string().uuid('Valid topic ID is required'),
+  title: z.string().min(1, 'Title is required').max(200),
+  url: z.string().min(1, 'Resource URL or link is required').max(1000),
+  resourceType: z.enum(['youtube', 'drive', 'pdf', 'book_ref', 'link']).default('link'),
+  pageReference: z.string().max(200).optional().default(''),
+  notes: z.string().max(1000).optional().default(''),
+});
+

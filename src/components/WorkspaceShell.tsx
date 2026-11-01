@@ -40,6 +40,9 @@ const SettingsView = React.lazy(() =>
 const RevisionTrackerView = React.lazy(() =>
   import('./RevisionTrackerView').then((m) => ({ default: m.RevisionTrackerView }))
 );
+const FlashcardsView = React.lazy(() =>
+  import('./FlashcardsView').then((m) => ({ default: m.FlashcardsView }))
+);
 
 import {
   PWAInstallButton,
@@ -47,6 +50,8 @@ import {
   OfflineConnectivityBanner,
 } from './PWAInstallUI';
 import { CreatorAttribution } from './CreatorAttribution';
+import { GamificationBadge } from './GamificationBadge';
+import { notificationService } from '@/lib/notifications';
 import { NavigationTab } from '@/types/index';
 import {
   Award,
@@ -56,6 +61,7 @@ import {
   Calendar,
   ClipboardList,
   History,
+  Layers,
   LayoutDashboard,
   Menu,
   Moon,
@@ -77,6 +83,7 @@ const NAV_ITEMS: Array<{
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tracker', label: 'Study Tracker', icon: ClipboardList },
   { id: 'timer', label: 'Study Timer', icon: Timer },
+  { id: 'flashcards', label: 'Flashcards', icon: Layers },
   { id: 'revision', label: 'Revision Tracker', icon: BookOpenCheck },
   { id: 'subjects', label: 'Subjects', icon: BookOpen },
   { id: 'schedule', label: 'Schedule', icon: Calendar },
@@ -123,6 +130,7 @@ export function WorkspaceShell() {
       import('./DashboardView');
       import('./StudyTrackerView');
       import('./StudyTimerView');
+      import('./FlashcardsView');
       import('./SubjectsView');
       import('./RevisionTrackerView');
       import('./ScheduleAndTasksView');
@@ -134,6 +142,16 @@ export function WorkspaceShell() {
     }, 1200);
     return () => clearTimeout(timer);
   }, []);
+
+  // Background Notification Scheduler
+  React.useEffect(() => {
+    if (data) {
+      notificationService.startBackgroundScheduler(data);
+    }
+    return () => {
+      notificationService.stopBackgroundScheduler();
+    };
+  }, [data]);
 
   if (authLoading) {
     return (
@@ -434,6 +452,8 @@ export function WorkspaceShell() {
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <GamificationBadge />
+
             <div className="hidden sm:block">
               <PWAInstallButton variant="header" />
             </div>
@@ -481,6 +501,11 @@ export function WorkspaceShell() {
             {visitedTabs.has('timer') && (
               <div className={activeTab === 'timer' ? 'block' : 'hidden'}>
                 <StudyTimerView />
+              </div>
+            )}
+            {visitedTabs.has('flashcards') && (
+              <div className={activeTab === 'flashcards' ? 'block' : 'hidden'}>
+                <FlashcardsView />
               </div>
             )}
             {visitedTabs.has('revision') && (
@@ -595,6 +620,7 @@ export function WorkspaceShell() {
           onClick={() => setMobileMenuOpen(true)}
           className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
             [
+              'flashcards',
               'revision',
               'schedule',
               'goals',

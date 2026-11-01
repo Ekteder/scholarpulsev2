@@ -8,10 +8,12 @@ import {
   requestBrowserNotificationPermission,
   sendBrowserNotification,
 } from '@/lib/audio';
+import { notificationService } from '@/lib/notifications';
 import { useTheme } from 'next-themes';
 import {
   AlertTriangle,
   Bell,
+  BellRing,
   Download,
   Globe,
   LogOut,
@@ -58,6 +60,12 @@ export function SettingsView() {
     profile.preferredStudyTime || 'evening'
   );
   const [timezone, setTimezone] = useState(profile.timezone || 'Asia/Dhaka');
+  const [targetExamName, setTargetExamName] = useState(
+    profile.targetExamName || 'HSC 2026'
+  );
+  const [targetExamDate, setTargetExamDate] = useState(
+    profile.targetExamDate || '2026-06-15'
+  );
   const [themePref, setThemePref] = useState(profile.themePreference || theme || 'light');
 
   // Keep local theme selection in sync
@@ -104,6 +112,8 @@ export function SettingsView() {
       preferredStudyTime,
       timezone,
       themePreference: themePref,
+      targetExamName: targetExamName.trim(),
+      targetExamDate,
       pomodoroFocusMinutes: focusMins,
       pomodoroShortBreakMinutes: shortBreakMins,
       pomodoroLongBreakMinutes: longBreakMins,
@@ -289,6 +299,31 @@ export function SettingsView() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Target Exam Name
+            </label>
+            <input
+              type="text"
+              value={targetExamName}
+              onChange={(e) => setTargetExamName(e.target.value)}
+              placeholder="e.g. HSC 2026, MCAT, SAT"
+              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Target Exam Date
+            </label>
+            <input
+              type="date"
+              value={targetExamDate}
+              onChange={(e) => setTargetExamDate(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono"
+            />
+          </div>
+
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
               Time Zone (Default: Asia/Dhaka)
@@ -429,14 +464,47 @@ export function SettingsView() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => playTimerChime('focus_end')}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-slate-700 dark:text-slate-300"
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Test Audio Chime</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const perm = await notificationService.requestPermission();
+                if (perm) {
+                  notificationService.send(
+                    '🔥 Streak Protection Alert Test',
+                    {
+                      body: 'Your daily study streak is active! Keep up the momentum to reach your exam target.',
+                    }
+                  );
+                  playTimerChime('focus_end');
+                  addToast({
+                    title: 'Test Notification Dispatched',
+                    description: 'Dispatched browser notification & streak alarm audio chime.',
+                    variant: 'success',
+                  });
+                } else {
+                  addToast({
+                    title: 'Notification Permission Denied',
+                    description: 'Please enable notifications in your browser site permissions.',
+                    variant: 'warning',
+                  });
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300 text-xs font-medium flex items-center gap-1.5 hover:bg-blue-100 cursor-pointer"
+            >
+              <BellRing className="w-3.5 h-3.5" />
+              <span>Test Notification & Streak Alarm</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => playTimerChime('focus_end')}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-slate-700 dark:text-slate-300"
+            >
+              <Volume2 className="w-3.5 h-3.5" />
+              <span>Test Audio Chime</span>
+            </button>
+          </div>
         </div>
 
         <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
