@@ -111,6 +111,8 @@ export async function exchangeGoogleCodeForUser(code: string, redirectUri: strin
       pomodoroLongBreakMinutes: 15,
       pomodoroLongBreakInterval: 4,
       onboardingCompleted: false,
+      targetExamName: 'HSC 2027',
+      targetExamDate: '2027-06-01',
     });
   }
 

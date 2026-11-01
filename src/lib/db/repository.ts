@@ -154,6 +154,8 @@ export async function getOrCreateProfile(userId: string, email: string, name?: s
         preferredStudyTime: 'evening',
         themePreference: 'light',
         onboardingCompleted: false,
+        targetExamName: 'HSC 2027',
+        targetExamDate: '2027-06-01',
       })
       .onConflictDoUpdate({
         target: profiles.userId,
