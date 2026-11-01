@@ -21,11 +21,12 @@ const SUGGESTED_SUBJECTS = [
   { name: 'Mathematics', color: '#9333EA', description: 'Calculus, Algebra & Trigonometry', dailyTargetMinutes: 90, weeklyTargetMinutes: 450 },
   { name: 'ICT', color: '#2563EB', description: 'Programming, Networking & Digital Logic', dailyTargetMinutes: 45, weeklyTargetMinutes: 240 },
   { name: 'English', color: '#D97706', description: 'Academic Writing, Grammar & Literature', dailyTargetMinutes: 45, weeklyTargetMinutes: 240 },
+  { name: 'Bangla', color: '#DC2626', description: 'Grammar, Prose, Poetry & Essay Writing', dailyTargetMinutes: 45, weeklyTargetMinutes: 240 },
 ];
 
 const SUBJECT_COLORS = [
   '#2563EB',
-  '#2563EB',
+  '#0284C7',
   '#0891B2',
   '#16A34A',
   '#D97706',
@@ -312,16 +313,18 @@ export function OnboardingModal() {
                     placeholder="e.g., Economics, Computer Science, History..."
                     className="flex-1 min-w-[180px] px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   />
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {SUBJECT_COLORS.map((c) => (
                       <button
                         key={c}
                         type="button"
                         onClick={() => setCustomSubjectColor(c)}
-                        className={`w-6 h-6 rounded-full cursor-pointer transition-transform ${
-                          customSubjectColor === c ? 'scale-110 ring-2 ring-offset-1 ring-slate-400' : ''
+                        className={`w-6 h-6 rounded-full cursor-pointer transition-transform shrink-0 ${
+                          customSubjectColor === c ? 'scale-110 ring-2 ring-offset-2 ring-slate-400 dark:ring-slate-500' : 'hover:scale-105'
                         }`}
                         style={{ backgroundColor: c }}
+                        title={`Select color ${c}`}
+                        aria-label={`Select color ${c}`}
                       />
                     ))}
                   </div>
