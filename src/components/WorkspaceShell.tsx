@@ -222,22 +222,30 @@ export function WorkspaceShell() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex">
+    <div className="min-h-screen min-h-dvh bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex w-full max-w-full overflow-x-clip">
       {/* Onboarding Modal for new accounts */}
       {data && !data.profile.onboardingCompleted && <OnboardingModal />}
 
       {/* Desktop Sidebar (256px width) */}
       <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-30">
-        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-display font-bold text-sm">
-            SP
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-display font-bold text-sm shrink-0">
+              SP
+            </div>
+            <span className="font-display font-bold text-base tracking-tight text-slate-900 dark:text-white truncate">
+              ScholarPulse
+            </span>
           </div>
-          <span className="font-display font-bold text-base tracking-tight text-slate-900 dark:text-white">
-            ScholarPulse
-          </span>
+          <RealtimeSyncBadge variant="sidebar" />
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {/* Scholar Rank in Desktop Sidebar */}
+        <div className="px-3 pt-3 pb-1">
+          <GamificationBadge variant="sidebar" />
+        </div>
+
+        <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
@@ -308,23 +316,33 @@ export function WorkspaceShell() {
             className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative w-64 max-w-[80vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-10">
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-display font-bold text-xs flex items-center justify-center">
+          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-10 shadow-2xl">
+            <div className="px-4 sm:px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-display font-bold text-xs flex items-center justify-center shrink-0">
                   SP
                 </div>
-                <span className="font-display font-bold text-sm">ScholarPulse</span>
+                <span className="font-display font-bold text-sm truncate">ScholarPulse</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <RealtimeSyncBadge variant="drawer" />
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer transition-colors"
+                  aria-label="Close menu"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+
+            {/* Scholar Rank in Mobile Drawer */}
+            <div className="px-3 pt-3 pb-1">
+              <GamificationBadge variant="drawer" />
+            </div>
+
+            <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const active = activeTab === item.id;
@@ -387,12 +405,13 @@ export function WorkspaceShell() {
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
-        <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:pb-3.5 flex items-center justify-between gap-2 sm:gap-6">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:pb-3.5 flex items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+          {/* Zone 1: Mobile Menu Trigger + Breadcrumb Trail */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 shrink-0 cursor-pointer"
+              className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer transition-colors"
               aria-label="Open navigation menu"
             >
               <Menu className="w-4 h-4" />
@@ -401,14 +420,15 @@ export function WorkspaceShell() {
               <span className="font-display font-bold text-slate-900 dark:text-white shrink-0">
                 Workspace
               </span>
-              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-slate-300 dark:text-slate-700 shrink-0">/</span>
               <span className="text-blue-600 dark:text-blue-400 font-semibold truncate">
                 {currentNavLabel}
               </span>
             </div>
           </div>
 
-          <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-600 dark:text-slate-400">
+          {/* Zone 2: Navigation Shortcuts on desktop */}
+          <nav className="hidden xl:flex items-center gap-5 text-xs font-medium text-slate-600 dark:text-slate-400">
             <button
               type="button"
               onClick={() => handleSelectNav('dashboard')}
@@ -446,9 +466,10 @@ export function WorkspaceShell() {
             </button>
           </nav>
 
+          {/* Zone 3: Live Sync, Gamification, Theme Toggle & Primary Action */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <RealtimeSyncBadge />
-            <GamificationBadge />
+            <RealtimeSyncBadge variant="header" />
+            <GamificationBadge variant="header" />
 
             <div className="hidden sm:block">
               <PWAInstallButton variant="header" />
@@ -458,7 +479,7 @@ export function WorkspaceShell() {
               type="button"
               onClick={toggleTheme}
               title="Toggle Light/Dark Mode"
-              className="p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -548,68 +569,71 @@ export function WorkspaceShell() {
       </div>
 
       {/* Mobile Native Bottom Navigation Bar */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-1 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-lg">
+      <nav
+        aria-label="Mobile Navigation"
+        className="lg:hidden fixed bottom-0 left-0 right-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-1 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-lg"
+      >
         <button
           type="button"
           onClick={() => handleSelectNav('dashboard')}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 sm:px-2 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer min-w-0 ${
             activeTab === 'dashboard'
               ? 'text-blue-600 dark:text-blue-400'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <LayoutDashboard className="w-5 h-5" />
-          <span>Dashboard</span>
+          <LayoutDashboard className="w-5 h-5 shrink-0" />
+          <span className="truncate max-w-full text-center leading-tight">Dashboard</span>
         </button>
 
         <button
           type="button"
           onClick={() => handleSelectNav('timer')}
-          className={`relative flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex-1 relative flex flex-col items-center justify-center gap-0.5 py-1 px-1 sm:px-2 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer min-w-0 ${
             activeTab === 'timer'
               ? 'text-blue-600 dark:text-blue-400'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <div className="relative">
-            <Timer className="w-5 h-5" />
+            <Timer className="w-5 h-5 shrink-0" />
             {activeTimer?.status === 'running' && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse ring-2 ring-white dark:ring-slate-900" />
             )}
           </div>
-          <span>Timer</span>
+          <span className="truncate max-w-full text-center leading-tight">Timer</span>
         </button>
 
         <button
           type="button"
           onClick={() => handleSelectNav('tracker')}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 sm:px-2 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer min-w-0 ${
             activeTab === 'tracker'
               ? 'text-blue-600 dark:text-blue-400'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <ClipboardList className="w-5 h-5" />
-          <span>Tracker</span>
+          <ClipboardList className="w-5 h-5 shrink-0" />
+          <span className="truncate max-w-full text-center leading-tight">Tracker</span>
         </button>
 
         <button
           type="button"
           onClick={() => handleSelectNav('subjects')}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 sm:px-2 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer min-w-0 ${
             activeTab === 'subjects'
               ? 'text-blue-600 dark:text-blue-400'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <BookOpen className="w-5 h-5" />
-          <span>Subjects</span>
+          <BookOpen className="w-5 h-5 shrink-0" />
+          <span className="truncate max-w-full text-center leading-tight">Subjects</span>
         </button>
 
         <button
           type="button"
           onClick={() => setMobileMenuOpen(true)}
-          className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-1 px-1 sm:px-2 rounded-xl text-[10px] font-semibold transition-colors cursor-pointer min-w-0 ${
             [
               'revision',
               'schedule',
@@ -623,8 +647,8 @@ export function WorkspaceShell() {
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <MoreHorizontal className="w-5 h-5" />
-          <span>More</span>
+          <MoreHorizontal className="w-5 h-5 shrink-0" />
+          <span className="truncate max-w-full text-center leading-tight">More</span>
         </button>
       </nav>
 
