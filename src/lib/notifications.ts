@@ -2,6 +2,7 @@
 
 import { playTimerChime } from './audio';
 import { WorkspaceData } from '@/types';
+import { toDateStringInTz, getDayOfWeekInTz, toTimeStringInTz } from './timezone';
 
 class NotificationService {
   private streakCheckTimer: NodeJS.Timeout | null = null;
@@ -80,22 +81,23 @@ class NotificationService {
     const prefs = data.notificationPreferences;
     if (!prefs?.dailyReminderEnabled) return;
 
+    const timezone = data.profile?.timezone || 'Asia/Dhaka';
     const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
+    const timeInTz = toTimeStringInTz(now, timezone);
+    const [hours, minutes] = timeInTz.split(':').map(Number);
 
-    // Trigger at 8:00 PM (20:00) or user's dailyReminderTime
+    // Trigger at 8:00 PM (20:00) or user's dailyReminderTime in their timezone
     const reminderTime = prefs.dailyReminderTime || '20:00';
     const [targetH, targetM] = reminderTime.split(':').map(Number);
 
     if (hours === targetH && Math.abs(minutes - targetM) < 2) {
-      const todayYmd = now.toISOString().slice(0, 10);
+      const todayYmd = toDateStringInTz(now, timezone);
       const key = `streak_${todayYmd}`;
       if (this.alertedSlotKeys.has(key)) return;
 
       // Check today's study minutes
       const todaySessions = data.studySessions.filter((s) => {
-        const sDate = new Date(s.startTime).toISOString().slice(0, 10);
+        const sDate = toDateStringInTz(s.startTime, timezone);
         return sDate === todayYmd;
       });
       const todayMinutes = Math.floor(
@@ -118,9 +120,12 @@ class NotificationService {
     const prefs = data.notificationPreferences;
     if (!prefs?.scheduleReminderEnabled) return;
 
+    const timezone = data.profile?.timezone || 'Asia/Dhaka';
     const now = new Date();
-    const dayOfWeek = now.getDay();
-    const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+    const dayOfWeek = getDayOfWeekInTz(now, timezone);
+    const timeInTz = toTimeStringInTz(now, timezone);
+    const [curH, curM] = timeInTz.split(':').map(Number);
+    const currentTotalMinutes = curH * 60 + curM;
 
     const todaySchedules = data.schedules.filter((s) => s.dayOfWeek === dayOfWeek);
 
@@ -130,7 +135,7 @@ class NotificationService {
 
       // Check if slot starts in 10 minutes (between 8 and 11 minutes away)
       const diffMinutes = scheduleMinutes - currentTotalMinutes;
-      const todayYmd = now.toISOString().slice(0, 10);
+      const todayYmd = toDateStringInTz(now, timezone);
       const key = `sch_${todayYmd}_${sch.id}_${sch.startTime}`;
 
       if (diffMinutes >= 8 && diffMinutes <= 11 && !this.alertedSlotKeys.has(key)) {

@@ -177,26 +177,23 @@ export function generatePdfDossier(data: WorkspaceData) {
     margin: { left: 14, right: 14 },
   });
 
-  // Footer & Seal
-  // @ts-expect-error autoTable adds lastAutoTable to doc
-  let footerY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : 260;
-  if (footerY > 270) {
-    doc.addPage();
-    footerY = 30;
+  // 6. Running Page Footers & Official Seal across all pages
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, 284, 196, 284);
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(...slateGrey);
+    doc.text(
+      'ScholarPulse Academic Engine • Cloud-Synchronized Study Dossier • Official Performance Record',
+      14,
+      289
+    );
+    doc.text(`Page ${i} of ${totalPages}`, 196, 289, { align: 'right' });
   }
-
-  doc.setDrawColor(203, 213, 225);
-  doc.line(14, footerY, 196, footerY);
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'italic');
-  doc.setTextColor(...slateGrey);
-  doc.text(
-    'ScholarPulse Academic Engine • Cloud-Synchronized Study Dossier • Keep pursuing scholarly excellence.',
-    14,
-    footerY + 6
-  );
-  doc.text(`Page 1 of 1`, 196, footerY + 6, { align: 'right' });
 
   // Save the PDF
   const filename = `ScholarPulse_Dossier_${profile.fullName?.replace(/\s+/g, '_') || 'Scholar'}_${now.toISOString().slice(0, 10)}.pdf`;

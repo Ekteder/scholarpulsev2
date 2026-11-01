@@ -170,7 +170,7 @@ export function ExamCountdownAndBurndown() {
               </button>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Target Exam Date: {new Date(targetExamDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              Target Exam Date: {new Date(`${targetExamDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </p>
           </div>
         </div>
@@ -200,27 +200,27 @@ export function ExamCountdownAndBurndown() {
       </div>
 
       {/* Live Countdown Clock */}
-      <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center">
+      <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center" suppressHydrationWarning>
         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
-          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100">
+          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100" suppressHydrationWarning>
             {countdown.days}
           </div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Days</div>
         </div>
         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
-          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100">
+          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100" suppressHydrationWarning>
             {String(countdown.hours).padStart(2, '0')}
           </div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hours</div>
         </div>
         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
-          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100">
+          <div className="text-xl sm:text-2xl font-black font-mono text-slate-900 dark:text-slate-100" suppressHydrationWarning>
             {String(countdown.minutes).padStart(2, '0')}
           </div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mins</div>
         </div>
         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
-          <div className="text-xl sm:text-2xl font-black font-mono text-rose-600 dark:text-rose-400 animate-pulse">
+          <div className="text-xl sm:text-2xl font-black font-mono text-rose-600 dark:text-rose-400 animate-pulse" suppressHydrationWarning>
             {String(countdown.seconds).padStart(2, '0')}
           </div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Secs</div>

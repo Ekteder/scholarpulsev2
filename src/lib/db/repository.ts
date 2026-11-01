@@ -1039,6 +1039,20 @@ export async function toggleRevisionRecord(
   const activityDate =
     data.activityDate || new Date().toISOString().slice(0, 10);
 
+  // Check previous completion status to award milestone XP accurately
+  const [existingRecord] = await db
+    .select({ isCompleted: revisionRecords.isCompleted })
+    .from(revisionRecords)
+    .where(
+      and(
+        eq(revisionRecords.userId, userId),
+        eq(revisionRecords.topicId, data.topicId),
+        eq(revisionRecords.category, data.category)
+      )
+    );
+
+  const wasCompleted = existingRecord?.isCompleted ?? false;
+
   const [record] = await db
     .insert(revisionRecords)
     .values({
@@ -1061,6 +1075,13 @@ export async function toggleRevisionRecord(
       },
     })
     .returning();
+
+  // Award 25 XP per milestone completion (or revoke if unticked)
+  if (!wasCompleted && data.isCompleted) {
+    await awardUserXp(userId, 25);
+  } else if (wasCompleted && !data.isCompleted) {
+    await awardUserXp(userId, -25);
+  }
 
   return record;
 }
@@ -1087,6 +1108,21 @@ export async function saveDetailedRevisionRecord(
   const activityDate =
     data.activityDate || new Date().toISOString().slice(0, 10);
 
+  const nextCompleted = data.isCompleted !== undefined ? data.isCompleted : true;
+
+  const [existingRecord] = await db
+    .select({ isCompleted: revisionRecords.isCompleted })
+    .from(revisionRecords)
+    .where(
+      and(
+        eq(revisionRecords.userId, userId),
+        eq(revisionRecords.topicId, data.topicId),
+        eq(revisionRecords.category, data.category)
+      )
+    );
+
+  const wasCompleted = existingRecord?.isCompleted ?? false;
+
   const [record] = await db
     .insert(revisionRecords)
     .values({
@@ -1094,7 +1130,7 @@ export async function saveDetailedRevisionRecord(
       subjectId: data.subjectId,
       topicId: data.topicId,
       category: data.category,
-      isCompleted: data.isCompleted !== undefined ? data.isCompleted : true,
+      isCompleted: nextCompleted,
       activityDate,
       bookName: data.bookName || null,
       pagesRead: data.pagesRead !== undefined ? data.pagesRead : null,
@@ -1106,7 +1142,7 @@ export async function saveDetailedRevisionRecord(
     .onConflictDoUpdate({
       target: [revisionRecords.userId, revisionRecords.topicId, revisionRecords.category],
       set: {
-        isCompleted: data.isCompleted !== undefined ? data.isCompleted : true,
+        isCompleted: nextCompleted,
         activityDate,
         bookName: data.bookName !== undefined ? data.bookName : undefined,
         pagesRead: data.pagesRead !== undefined ? data.pagesRead : undefined,
@@ -1119,6 +1155,12 @@ export async function saveDetailedRevisionRecord(
     })
     .returning();
 
+  if (!wasCompleted && nextCompleted) {
+    await awardUserXp(userId, 25);
+  } else if (wasCompleted && !nextCompleted) {
+    await awardUserXp(userId, -25);
+  }
+
   return record;
 }
 
@@ -1126,10 +1168,19 @@ export async function saveDetailedRevisionRecord(
  * Deletes or resets a revision record
  */
 export async function deleteRevisionRecord(userId: string, recordId: string) {
+  const [existingRecord] = await db
+    .select({ isCompleted: revisionRecords.isCompleted })
+    .from(revisionRecords)
+    .where(and(eq(revisionRecords.id, recordId), eq(revisionRecords.userId, userId)));
+
   const deleted = await db
     .delete(revisionRecords)
     .where(and(eq(revisionRecords.id, recordId), eq(revisionRecords.userId, userId)))
     .returning();
+
+  if (existingRecord?.isCompleted) {
+    await awardUserXp(userId, -25);
+  }
 
   return deleted[0] || null;
 }
@@ -1793,30 +1844,60 @@ export async function reviewUserFlashcard(
   let newRepetitions = 0;
   let newInterval = 1;
 
-  if (grade < 3) {
-    // Failure (Again)
+  if (grade === 1) {
+    // Failure (Again): Reset repetitions to 0, review again tomorrow (1 day)
     newRepetitions = 0;
     newInterval = 1;
-  } else {
-    // Success (Hard, Good, Easy)
+  } else if (grade === 2) {
+    // Hard: Passing recall, but difficult. Advances interval modestly (+20% or min 1-2 days).
+    newRepetitions = currentRepetitions + 1;
     if (currentRepetitions === 0) {
       newInterval = 1;
     } else if (currentRepetitions === 1) {
-      newInterval = grade === 2 ? 3 : 6;
+      newInterval = 2;
     } else {
-      const multiplier = grade === 2 ? 1.2 : grade === 4 ? easeFactorNum * 1.3 : easeFactorNum;
-      newInterval = Math.max(1, Math.round(currentInterval * multiplier));
+      newInterval = Math.max(currentInterval + 1, Math.round(currentInterval * 1.2));
     }
+  } else if (grade === 3) {
+    // Good: Standard successful recall with easeFactor scaling
     newRepetitions = currentRepetitions + 1;
+    if (currentRepetitions === 0) {
+      newInterval = 1;
+    } else if (currentRepetitions === 1) {
+      newInterval = 6;
+    } else {
+      newInterval = Math.max(currentInterval + 1, Math.round(currentInterval * easeFactorNum));
+    }
+  } else {
+    // Easy (grade === 4): Swift, confident recall. Leaps forward.
+    newRepetitions = currentRepetitions + 1;
+    if (currentRepetitions === 0) {
+      newInterval = 3;
+    } else if (currentRepetitions === 1) {
+      newInterval = 8;
+    } else {
+      newInterval = Math.max(currentInterval + 2, Math.round(currentInterval * easeFactorNum * 1.3));
+    }
   }
 
   // SM-2 Ease Factor calculation
-  easeFactorNum = Math.max(
-    1.3,
-    easeFactorNum + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02))
-  );
+  // Map 1-4 grade to standard SM-2 0-5 quality scale:
+  // grade 1 (Again) -> q = 2 (EF delta: -0.32)
+  // grade 2 (Hard)  -> q = 3 (EF delta: -0.14)
+  // grade 3 (Good)  -> q = 4 (EF delta: 0.00)
+  // grade 4 (Easy)  -> q = 5 (EF delta: +0.10)
+  const q = grade + 1;
+  const efDelta = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
+  easeFactorNum = Math.max(1.3, Number((easeFactorNum + efDelta).toFixed(2)));
 
-  const nextReviewDate = addDaysToYmd(new Date().toISOString().slice(0, 10), newInterval);
+  // Timezone-aware review date
+  const [profileRecord] = await db
+    .select({ timezone: profiles.timezone })
+    .from(profiles)
+    .where(eq(profiles.userId, userId));
+  const userTz = profileRecord?.timezone || 'Asia/Dhaka';
+  const todayYmd = toDateStringInTz(new Date(), userTz);
+  const nextReviewDate = addDaysToYmd(todayYmd, newInterval);
 
   const [updated] = await db
     .update(flashcards)
@@ -1830,9 +1911,6 @@ export async function reviewUserFlashcard(
     })
     .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
     .returning();
-
-  // Award 5 XP for reviewing
-  await awardUserXp(userId, 5);
 
   return updated;
 }

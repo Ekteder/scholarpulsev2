@@ -5,6 +5,7 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { FlashcardItem } from '@/types';
 import { MathRenderer, MathCheatSheetPopover } from './MathRenderer';
 import { triggerCelebrationConfetti } from '@/lib/gamification';
+import { toDateStringInTz } from '@/lib/timezone';
 import {
   Layers,
   RotateCw,
@@ -38,7 +39,8 @@ export function FlashcardsView() {
   const [reviewIndex, setReviewIndex] = useState(0);
   const [cardFlipped, setCardFlipped] = useState(false);
 
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const timezone = data?.profile?.timezone || 'Asia/Dhaka';
+  const todayYmd = useMemo(() => toDateStringInTz(new Date(), timezone), [timezone]);
 
   const subjects = data?.subjects || [];
   const allCards = data?.flashcards || [];
@@ -51,12 +53,12 @@ export function FlashcardsView() {
 
   // Review Queue (cards where nextReviewDate <= today)
   const dueCards = useMemo(() => {
-    let pool = allCards.filter((c) => c.nextReviewDate <= todayStr);
+    let pool = allCards.filter((c) => !c.nextReviewDate || c.nextReviewDate <= todayYmd);
     if (selectedSubjectFilter !== 'all') {
       pool = pool.filter((c) => c.subjectId === selectedSubjectFilter);
     }
     return pool;
-  }, [allCards, selectedSubjectFilter, todayStr]);
+  }, [allCards, selectedSubjectFilter, todayYmd]);
 
   const activeCard = isReviewing && dueCards.length > 0 ? dueCards[reviewIndex] : null;
 
@@ -393,7 +395,7 @@ export function FlashcardsView() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredCards.map((card) => {
               const sub = subjects.find((s) => s.id === card.subjectId);
-              const isDue = card.nextReviewDate <= todayStr;
+              const isDue = !card.nextReviewDate || card.nextReviewDate <= todayYmd;
               return (
                 <div
                   key={card.id}

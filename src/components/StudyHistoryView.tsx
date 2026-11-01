@@ -20,6 +20,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { MathRenderer } from './MathRenderer';
 
 export function StudyHistoryView() {
   const { data, updateSession, deleteSession } = useWorkspace();
@@ -393,9 +394,9 @@ export function StudyHistoryView() {
                             {sess.topic}
                           </p>
                           {sess.notes && (
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {sess.notes}
-                            </p>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              <MathRenderer content={sess.notes} inline />
+                            </div>
                           )}
                         </td>
                         <td className="py-3 px-3 font-mono tabular-nums text-slate-500 whitespace-nowrap">
@@ -700,7 +701,9 @@ export function StudyHistoryView() {
                             </span>
                           </div>
                           {s.notes && (
-                            <p className="text-xs text-slate-500">{s.notes}</p>
+                            <div className="text-xs text-slate-500">
+                              <MathRenderer content={s.notes} inline />
+                            </div>
                           )}
                           <div className="font-mono text-[11px] text-slate-500">
                             {toTimeStringInTz(s.startTime, timezone)} –{' '}
@@ -816,13 +819,21 @@ export function StudyHistoryView() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Notes</label>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Notes (KaTeX math supported: e.g. $E=mc^2$)
+                </label>
                 <textarea
                   rows={2}
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white font-mono text-xs"
                 />
+                {editNotes && editNotes.includes('$') && (
+                  <div className="mt-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">KaTeX Preview:</span>
+                    <MathRenderer content={editNotes} inline />
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

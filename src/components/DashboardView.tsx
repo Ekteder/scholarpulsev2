@@ -70,10 +70,9 @@ export function DashboardView() {
   const dueFlashcards = useMemo(() => {
     return flashcards.filter((c) => {
       if (!c.nextReviewDate) return true;
-      const reviewYmd = toDateStringInTz(c.nextReviewDate, timezone);
-      return reviewYmd <= todayYmd;
+      return c.nextReviewDate <= todayYmd;
     });
-  }, [flashcards, timezone, todayYmd]);
+  }, [flashcards, todayYmd]);
 
   const subjectMap = useMemo(() => {
     const map = new Map<string, (typeof subjects)[0]>();

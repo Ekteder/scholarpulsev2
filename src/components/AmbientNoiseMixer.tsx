@@ -17,6 +17,7 @@ import {
   Waves,
   Sparkles,
   Sliders,
+  X,
 } from 'lucide-react';
 
 const TRACK_CONFIG: Array<{
@@ -101,15 +102,17 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
     ambientSound.setTrackVolume(track, val);
   };
 
+  const [compactMixerOpen, setCompactMixerOpen] = useState(false);
+
   if (compact) {
     return (
-      <div className="relative inline-block">
+      <div className="relative inline-flex items-center gap-1">
         <button
           onClick={handleTogglePlay}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
             state.isPlaying
               ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20 animate-pulse'
-              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
           }`}
           title="Ambient Study Noise Generator"
         >
@@ -125,6 +128,133 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
             </>
           )}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setCompactMixerOpen(!compactMixerOpen)}
+          className={`p-1.5 rounded-lg border transition-all ${
+            compactMixerOpen
+              ? 'bg-blue-600 text-white border-blue-500'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/80 hover:text-white'
+          }`}
+          title="Adjust Individual Sound Sliders"
+          aria-label="Adjust Individual Sound Sliders"
+        >
+          <Sliders className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Floating Compact Mixer Popover */}
+        {compactMixerOpen && (
+          <div className="absolute bottom-full right-0 mb-3 w-76 sm:w-80 bg-slate-900/98 backdrop-blur-xl border border-slate-700/90 rounded-2xl p-4 shadow-2xl z-50 text-white space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-blue-600/30 text-blue-400 flex items-center justify-center">
+                  <Sliders className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-white">Ambient Sound Mixer</h5>
+                  <p className="text-[10px] text-slate-400">Synthesized on device</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompactMixerOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Close Mixer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Presets */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] no-scrollbar">
+              <button
+                type="button"
+                onClick={() => ambientSound?.applyPreset('deep_focus')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-blue-600/30 text-slate-300 hover:text-blue-300 shrink-0 font-medium transition-colors"
+              >
+                🧠 Focus
+              </button>
+              <button
+                type="button"
+                onClick={() => ambientSound?.applyPreset('rainy_study')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-sky-600/30 text-slate-300 hover:text-sky-300 shrink-0 font-medium transition-colors"
+              >
+                🌧️ Rain
+              </button>
+              <button
+                type="button"
+                onClick={() => ambientSound?.applyPreset('campfire_library')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-amber-600/30 text-slate-300 hover:text-amber-300 shrink-0 font-medium transition-colors"
+              >
+                🔥 Fire
+              </button>
+              <button
+                type="button"
+                onClick={() => ambientSound?.applyPreset('brownian_calm')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 shrink-0 font-medium transition-colors"
+              >
+                🌊 Brown
+              </button>
+            </div>
+
+            {/* Master Volume */}
+            <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-300 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Volume2 className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Master Volume</span>
+                </span>
+                <span className="font-mono text-[10px] text-slate-400">
+                  {Math.round(state.masterVolume * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={state.masterVolume}
+                onChange={handleMasterVolume}
+                className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+              />
+            </div>
+
+            {/* Individual Sound Sliders */}
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+              {TRACK_CONFIG.map((track) => {
+                const Icon = track.icon;
+                const currentVol = state.volumes[track.id] || 0;
+                return (
+                  <div
+                    key={track.id}
+                    className="p-2 rounded-lg bg-slate-950/50 border border-slate-800/80 space-y-1"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5 font-medium text-slate-200 text-[11px]">
+                        <Icon className={`w-3 h-3 ${track.color}`} />
+                        <span>{track.label}</span>
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">
+                        {Math.round(currentVol * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.02"
+                      value={currentVol}
+                      onChange={(e) => handleTrackVolume(track.id, parseFloat(e.target.value))}
+                      className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

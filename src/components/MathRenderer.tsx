@@ -7,12 +7,13 @@ interface MathRendererProps {
   content: string;
   className?: string;
   block?: boolean;
+  inline?: boolean;
 }
 
 /**
  * Safely parses and renders text containing inline ($...$) and block ($$...$$) KaTeX mathematical formulas.
  */
-export function MathRenderer({ content, className = '', block = false }: MathRendererProps) {
+export function MathRenderer({ content, className = '', block = false, inline = false }: MathRendererProps) {
   const renderedContent = useMemo(() => {
     if (!content) return null;
 
@@ -80,6 +81,10 @@ export function MathRenderer({ content, className = '', block = false }: MathRen
 
     return parts;
   }, [content, block]);
+
+  if (inline) {
+    return <span className={`font-sans leading-relaxed ${className}`}>{renderedContent}</span>;
+  }
 
   return <div className={`font-sans leading-relaxed ${className}`}>{renderedContent}</div>;
 }

@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MathRenderer, MathCheatSheetPopover } from './MathRenderer';
 
 const WEEKDAYS = [
   { index: 1, name: 'Monday', short: 'Mon' },
@@ -401,9 +402,9 @@ export function ScheduleAndTasksView() {
                                 {slot.startTime} – {slot.endTime}
                               </div>
                               {slot.description && (
-                                <p className="text-[11px] text-slate-500 truncate">
-                                  {slot.description}
-                                </p>
+                                <div className="text-[11px] text-slate-500 truncate">
+                                  <MathRenderer content={slot.description} inline />
+                                </div>
                               )}
                             </div>
                           );
@@ -586,9 +587,9 @@ export function ScheduleAndTasksView() {
                           </div>
 
                           {task.description && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {task.description}
-                            </p>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              <MathRenderer content={task.description} inline />
+                            </div>
                           )}
 
                           <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -701,16 +702,25 @@ export function ScheduleAndTasksView() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Description
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Description
+                  </label>
+                  <MathCheatSheetPopover />
+                </div>
                 <textarea
                   rows={2}
                   value={taskDescription}
                   onChange={(e) => setTaskDescription(e.target.value)}
-                  placeholder="Details, chapters, or submission instructions..."
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Details, chapters, formulas (e.g. $E=mc^2$), or instructions..."
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
                 />
+                {taskDescription && taskDescription.includes('$') && (
+                  <div className="mt-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">KaTeX Formula Preview:</span>
+                    <MathRenderer content={taskDescription} inline />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">

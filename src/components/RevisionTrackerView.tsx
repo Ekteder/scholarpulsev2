@@ -13,7 +13,7 @@ import {
   RevisionWorkspacePayload,
   UserCurriculumCustomization,
 } from '@/types/index';
-import { MathRenderer } from './MathRenderer';
+import { MathRenderer, MathCheatSheetPopover } from './MathRenderer';
 import {
   BookOpenCheck,
   Check,
@@ -1392,7 +1392,7 @@ export function RevisionTrackerView() {
                           )}
                       </td>
                       <td className="py-2.5 px-4 max-w-[200px] truncate text-slate-500 text-[11px]">
-                        {item.notes || '—'}
+                        {item.notes ? <MathRenderer content={item.notes} inline /> : '—'}
                       </td>
                       <td className="py-2.5 px-4 text-right">
                         <button
@@ -1601,9 +1601,9 @@ export function RevisionTrackerView() {
                               </p>
                             )}
                             {res.notes && (
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                                {res.notes}
-                              </p>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                <MathRenderer content={res.notes} inline />
+                              </div>
                             )}
                           </div>
 
@@ -1887,7 +1887,10 @@ export function RevisionTrackerView() {
                     <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                       Notes & Key Takeaways
                     </label>
-                    <span className="text-[10px] text-slate-400">Math KaTeX supported e.g. $E = mc^2$</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400">Math KaTeX supported e.g. $E = mc^2$</span>
+                      <MathCheatSheetPopover />
+                    </div>
                   </div>
                   <textarea
                     rows={3}

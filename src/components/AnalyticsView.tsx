@@ -398,6 +398,7 @@ export function AnalyticsView() {
         seconds: 0,
         sessionCount: 0,
         totalRating: 0,
+        ratedCount: 0,
       },
       {
         key: 'afternoon',
@@ -408,6 +409,7 @@ export function AnalyticsView() {
         seconds: 0,
         sessionCount: 0,
         totalRating: 0,
+        ratedCount: 0,
       },
       {
         key: 'evening',
@@ -418,6 +420,7 @@ export function AnalyticsView() {
         seconds: 0,
         sessionCount: 0,
         totalRating: 0,
+        ratedCount: 0,
       },
       {
         key: 'night',
@@ -428,6 +431,7 @@ export function AnalyticsView() {
         seconds: 0,
         sessionCount: 0,
         totalRating: 0,
+        ratedCount: 0,
       },
     ];
 
@@ -445,13 +449,15 @@ export function AnalyticsView() {
 
       brackets[idx].seconds += sess.durationSeconds;
       brackets[idx].sessionCount += 1;
-      const rating = sess.productivityRating && sess.productivityRating > 0 ? sess.productivityRating : 4;
-      brackets[idx].totalRating += rating;
+      if (sess.productivityRating && sess.productivityRating > 0) {
+        brackets[idx].totalRating += sess.productivityRating;
+        brackets[idx].ratedCount += 1;
+      }
     }
 
     const rows = brackets.map((b) => {
       const hours = Number((b.seconds / 3600).toFixed(2));
-      const avgRating = b.sessionCount > 0 ? Number((b.totalRating / b.sessionCount).toFixed(1)) : 0;
+      const avgRating = b.ratedCount > 0 ? Number((b.totalRating / b.ratedCount).toFixed(1)) : 0;
       return {
         ...b,
         hours,

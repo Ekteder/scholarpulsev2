@@ -621,6 +621,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const res = await toggleRevisionAction(opts);
     if (!res.success || !res.record) throw new Error('Failed to toggle revision');
     const rec = res.record as unknown as RevisionRecord;
+    
+    // Check if completion status changed to update gamification XP
+    const prevRecord = revisionData?.records.find(
+      (r) => r.topicId === opts.topicId && r.category === opts.category
+    );
+    const wasCompleted = prevRecord?.isCompleted ?? false;
+    const xpDelta = !wasCompleted && opts.isCompleted ? 25 : wasCompleted && !opts.isCompleted ? -25 : 0;
+
+    if (xpDelta !== 0) {
+      setData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) + xpDelta),
+          },
+        };
+      });
+    }
+
     setRevisionData((prev) => {
       if (!prev) return null;
       const filtered = prev.records.filter(
@@ -632,24 +653,57 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
     return rec;
-  }, []);
+  }, [revisionData?.records]);
 
   const saveDetailedRevision = useCallback(async (opts: any) => {
+    const prevRecord = revisionData?.records.find((r) => r.id === opts.id || (r.topicId === opts.topicId && r.category === opts.category));
+    const wasCompleted = prevRecord?.isCompleted ?? false;
+    const isCompleted = opts.isCompleted !== undefined ? opts.isCompleted : true;
+    const xpDelta = !wasCompleted && isCompleted ? 25 : wasCompleted && !isCompleted ? -25 : 0;
+
     const res = await saveDetailedRevisionRecordAction(opts);
     if (!res.success || !res.record) throw new Error('Failed to save detailed record');
     const rec = res.record as unknown as RevisionRecord;
+
+    if (xpDelta !== 0) {
+      setData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) + xpDelta),
+          },
+        };
+      });
+    }
+
     setRevisionData((prev) => {
       if (!prev) return null;
-      const filtered = prev.records.filter((r) => r.id !== rec.id);
+      const filtered = prev.records.filter((r) => r.id !== rec.id && !(r.topicId === rec.topicId && r.category === rec.category));
       const nextRecords = [...filtered, rec];
       const updated = { ...prev, records: nextRecords };
       revisionCacheRef.current = updated;
       return updated;
     });
     return rec;
-  }, []);
+  }, [revisionData?.records]);
 
   const deleteRevisionRecordItem = useCallback(async (recordId: string) => {
+    const existing = revisionData?.records.find((r) => r.id === recordId);
+    if (existing?.isCompleted) {
+      setData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) - 25),
+          },
+        };
+      });
+    }
+
     await deleteRevisionRecordAction(recordId);
     setRevisionData((prev) => {
       if (!prev) return null;
@@ -658,7 +712,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
-  }, []);
+  }, [revisionData?.records]);
 
   const addCustomCurriculumTopicItem = useCallback(async (opts: any) => {
     const res = await addCustomCurriculumTopicAction(opts);
@@ -733,14 +787,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const card = res.flashcard as unknown as FlashcardItem;
     setData((prev) => {
       if (!prev) return null;
-      const updatedProfile = {
-        ...prev.profile,
-        gamificationXp: (prev.profile.gamificationXp || 0) + 5,
-      };
       return {
         ...prev,
-        profile: updatedProfile,
-        flashcards: (prev.flashcards || []).map((f) => f.id === id ? card : f),
+        flashcards: (prev.flashcards || []).map((f) => (f.id === id ? card : f)),
       };
     });
     return card;
