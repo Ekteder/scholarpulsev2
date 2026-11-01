@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <!-- Graduation Cap Crown -->
+  <path d="M256 116L96 192L256 268L416 192L256 116Z" fill="#FFFFFF" />
+  <!-- Cap Base -->
+  <path d="M152 232V324C152 356 198 384 256 384C314 384 360 356 360 324V232L256 282L152 232Z" fill="#E0E7FF" />
+  <!-- Tassel -->
+  <path d="M400 200V308" stroke="#93C5FD" stroke-width="18" stroke-linecap="round" />
+  <circle cx="400" cy="316" r="14" fill="#FFFFFF" />
+  <!-- ScholarPulse Waveform Accent -->
+  <path d="M176 324H216L236 290L268 354L290 314L306 324H336" stroke="#2563EB" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+</svg>

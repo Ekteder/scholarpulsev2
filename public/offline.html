@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F172A" />
+    <title>ScholarPulse — Offline</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background-color: #f8fafc;
+        color: #0f172a;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: #0f172a;
+          color: #f8fafc;
+        }
+        .card {
+          background-color: #1e293b !important;
+          border-color: #334155 !important;
+        }
+        .subtitle {
+          color: #94a3b8 !important;
+        }
+        .feature-list {
+          background-color: #0f172a !important;
+          border-color: #334155 !important;
+        }
+      }
+      .card {
+        max-width: 28rem;
+        width: 100%;
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 2rem;
+        text-align: center;
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06);
+      }
+      .logo {
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: 0.875rem;
+        background-color: #4f46e5;
+        color: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.25rem;
+      }
+      h1 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.5rem;
+      }
+      .subtitle {
+        font-size: 0.925rem;
+        line-height: 1.5;
+        color: #475569;
+        margin-bottom: 1.5rem;
+      }
+      .feature-list {
+        text-align: left;
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        background-color: #4f46e5;
+        color: #ffffff;
+        font-weight: 600;
+        font-size: 0.9rem;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background-color 0.15s ease;
+      }
+      .btn:hover {
+        background-color: #4338ca;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+          <path d="M6 12v5c3 3 9 3 12 0v-5" />
+        </svg>
+      </div>
+      <h1>You're Currently Offline</h1>
+      <p class="subtitle">
+        ScholarPulse couldn't reach the cloud server right now. Check your internet connection and try reconnecting.
+      </p>
+      <div class="feature-list">
+        <strong>Your Study Data Is Safe:</strong>
+        <ul style="margin-top: 0.35rem; padding-left: 1.1rem;">
+          <li>Completed timer sessions while offline are queued locally and synced automatically on reconnect.</li>
+          <li>Private study records are never stored in shared public caches.</li>
+        </ul>
+      </div>
+      <button class="btn" onclick="window.location.reload()">
+        Retry Connection
+      </button>
+    </div>
+    <script>
+      window.addEventListener('online', function () {
+        window.location.reload();
+      });
+    </script>
+  </body>
+</html>
