@@ -20,6 +20,7 @@ async function requireUser() {
 export async function createFlashcardAction(raw: unknown) {
   const user = await requireUser();
   const parsed = FlashcardSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const flashcard = await createUserFlashcard(user.uid, parsed);
 
   if (flashcard) {
@@ -27,6 +28,7 @@ export async function createFlashcardAction(raw: unknown) {
       userId: user.uid,
       eventType: 'flashcard:create',
       payload: { flashcard },
+      clientDeviceId,
     });
   }
 
@@ -37,6 +39,7 @@ export async function createFlashcardAction(raw: unknown) {
 export async function updateFlashcardAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = FlashcardSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const flashcard = await updateUserFlashcard(user.uid, id, parsed);
 
   if (flashcard) {
@@ -44,6 +47,7 @@ export async function updateFlashcardAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'flashcard:update',
       payload: { flashcard },
+      clientDeviceId,
     });
   }
 
@@ -51,7 +55,7 @@ export async function updateFlashcardAction(id: string, raw: unknown) {
   return { success: true, flashcard };
 }
 
-export async function deleteFlashcardAction(id: string) {
+export async function deleteFlashcardAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteUserFlashcard(user.uid, id);
 
@@ -59,6 +63,7 @@ export async function deleteFlashcardAction(id: string) {
     userId: user.uid,
     eventType: 'flashcard:delete',
     payload: { flashcardId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');
@@ -68,6 +73,7 @@ export async function deleteFlashcardAction(id: string) {
 export async function reviewFlashcardAction(raw: unknown) {
   const user = await requireUser();
   const parsed = FlashcardReviewSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const updatedCard = await reviewUserFlashcard(user.uid, parsed.id, parsed.grade);
 
   if (updatedCard) {
@@ -75,6 +81,7 @@ export async function reviewFlashcardAction(raw: unknown) {
       userId: user.uid,
       eventType: 'flashcard:update',
       payload: { flashcard: updatedCard },
+      clientDeviceId,
     });
   }
 

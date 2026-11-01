@@ -19,6 +19,7 @@ async function requireUser() {
 export async function createSubjectAction(raw: unknown) {
   const user = await requireUser();
   const parsed = SubjectSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const subject = await createSubject(user.uid, parsed);
 
   if (subject) {
@@ -26,6 +27,7 @@ export async function createSubjectAction(raw: unknown) {
       userId: user.uid,
       eventType: 'subject:create',
       payload: { subject },
+      clientDeviceId,
     });
   }
 
@@ -36,6 +38,7 @@ export async function createSubjectAction(raw: unknown) {
 export async function updateSubjectAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = SubjectSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const subject = await updateSubject(user.uid, id, parsed);
 
   if (subject) {
@@ -43,6 +46,7 @@ export async function updateSubjectAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'subject:update',
       payload: { subject },
+      clientDeviceId,
     });
   }
 
@@ -50,7 +54,7 @@ export async function updateSubjectAction(id: string, raw: unknown) {
   return { success: true, subject };
 }
 
-export async function deleteSubjectAction(id: string) {
+export async function deleteSubjectAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteSubject(user.uid, id);
 
@@ -58,6 +62,7 @@ export async function deleteSubjectAction(id: string) {
     userId: user.uid,
     eventType: 'subject:delete',
     payload: { subjectId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

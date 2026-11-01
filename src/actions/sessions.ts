@@ -19,6 +19,7 @@ async function requireUser() {
 export async function createStudySessionAction(raw: unknown) {
   const user = await requireUser();
   const parsed = StudySessionSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await createStudySession(user.uid, {
     ...parsed,
     startTime: new Date(parsed.startTime),
@@ -33,6 +34,7 @@ export async function createStudySessionAction(raw: unknown) {
         session: result.session,
         newlyUnlockedAchievements: (result as any).newlyUnlockedAchievements || [],
       },
+      clientDeviceId,
     });
   }
 
@@ -43,6 +45,7 @@ export async function createStudySessionAction(raw: unknown) {
 export async function updateStudySessionAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = StudySessionSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const session = await updateStudySession(user.uid, id, {
     ...parsed,
     startTime: parsed.startTime ? new Date(parsed.startTime) : undefined,
@@ -54,6 +57,7 @@ export async function updateStudySessionAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'session:update',
       payload: { session },
+      clientDeviceId,
     });
   }
 
@@ -61,7 +65,7 @@ export async function updateStudySessionAction(id: string, raw: unknown) {
   return { success: true, session };
 }
 
-export async function deleteStudySessionAction(id: string) {
+export async function deleteStudySessionAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteStudySession(user.uid, id);
 
@@ -69,6 +73,7 @@ export async function deleteStudySessionAction(id: string) {
     userId: user.uid,
     eventType: 'session:delete',
     payload: { sessionId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

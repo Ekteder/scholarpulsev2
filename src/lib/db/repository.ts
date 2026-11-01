@@ -559,92 +559,91 @@ export async function createStudySessionTransactional(
   }
 ) {
   try {
-    return await db.transaction(async (tx) => {
-      // 1. Verify subject ownership
-      const subRows = await tx
+    const tx = db;
+    // 1. Verify subject ownership
+    const subRows = await tx
+      .select()
+      .from(subjects)
+      .where(and(eq(subjects.id, data.subjectId), eq(subjects.userId, userId)));
+    if (subRows.length === 0) {
+      throw new Error('Selected subject does not exist or belongs to another account.');
+    }
+
+    // 2. Check idempotency key to prevent duplicate session submissions
+    if (data.idempotencyKey) {
+      const dup = await tx
         .select()
-        .from(subjects)
-        .where(and(eq(subjects.id, data.subjectId), eq(subjects.userId, userId)));
-      if (subRows.length === 0) {
-        throw new Error('Selected subject does not exist or belongs to another account.');
-      }
-
-      // 2. Check idempotency key to prevent duplicate session submissions
-      if (data.idempotencyKey) {
-        const dup = await tx
-          .select()
-          .from(studySessions)
-          .where(
-            and(
-              eq(studySessions.idempotencyKey, data.idempotencyKey),
-              eq(studySessions.userId, userId)
-            )
-          );
-        if (dup.length > 0) {
-          if (data.clearActiveTimer) {
-            await tx
-              .delete(activeTimerSessions)
-              .where(eq(activeTimerSessions.userId, userId));
-          }
-          return { session: dup[0], duplicate: true };
+        .from(studySessions)
+        .where(
+          and(
+            eq(studySessions.idempotencyKey, data.idempotencyKey),
+            eq(studySessions.userId, userId)
+          )
+        );
+      if (dup.length > 0) {
+        if (data.clearActiveTimer) {
+          await tx
+            .delete(activeTimerSessions)
+            .where(eq(activeTimerSessions.userId, userId));
         }
+        return { session: dup[0], duplicate: true };
       }
+    }
 
-      // 3. Calculate duration strictly from timestamps
-      const durationSeconds = Math.round(
-        (data.endTime.getTime() - data.startTime.getTime()) / 1000
-      );
-      if (durationSeconds <= 0) {
-        throw new Error('End time must be after start time.');
+    // 3. Calculate duration strictly from timestamps
+    const durationSeconds = Math.round(
+      (data.endTime.getTime() - data.startTime.getTime()) / 1000
+    );
+    if (durationSeconds <= 0) {
+      throw new Error('End time must be after start time.');
+    }
+    if (durationSeconds > 86400) {
+      throw new Error('A single study session cannot exceed 24 hours.');
+    }
+
+    // 4. For manual sessions, verify no overlapping session exists for this user
+    if (data.sessionType === 'manual') {
+      const overlapping = await tx
+        .select()
+        .from(studySessions)
+        .where(
+          and(
+            eq(studySessions.userId, userId),
+            lt(studySessions.startTime, data.endTime),
+            gt(studySessions.endTime, data.startTime)
+          )
+        );
+
+      if (overlapping.length > 0) {
+        throw new Error(
+          'This time interval overlaps with an existing recorded study session.'
+        );
       }
-      if (durationSeconds > 86400) {
-        throw new Error('A single study session cannot exceed 24 hours.');
-      }
+    }
 
-      // 4. For manual sessions, verify no overlapping session exists for this user
-      if (data.sessionType === 'manual') {
-        const overlapping = await tx
-          .select()
-          .from(studySessions)
-          .where(
-            and(
-              eq(studySessions.userId, userId),
-              lt(studySessions.startTime, data.endTime),
-              gt(studySessions.endTime, data.startTime)
-            )
-          );
+    const [inserted] = await tx
+      .insert(studySessions)
+      .values({
+        userId,
+        subjectId: data.subjectId,
+        idempotencyKey: data.idempotencyKey || null,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        durationSeconds,
+        topic: data.topic.trim() || 'Focused Study',
+        notes: data.notes?.trim() || '',
+        productivityRating: data.productivityRating || 4,
+        sessionType: data.sessionType,
+      })
+      .returning();
 
-        if (overlapping.length > 0) {
-          throw new Error(
-            'This time interval overlaps with an existing recorded study session.'
-          );
-        }
-      }
+    if (data.clearActiveTimer) {
+      await tx
+        .delete(activeTimerSessions)
+        .where(eq(activeTimerSessions.userId, userId));
+    }
 
-      const [inserted] = await tx
-        .insert(studySessions)
-        .values({
-          userId,
-          subjectId: data.subjectId,
-          idempotencyKey: data.idempotencyKey || null,
-          startTime: data.startTime,
-          endTime: data.endTime,
-          durationSeconds,
-          topic: data.topic.trim() || 'Focused Study',
-          notes: data.notes?.trim() || '',
-          productivityRating: data.productivityRating || 4,
-          sessionType: data.sessionType,
-        })
-        .returning();
-
-      if (data.clearActiveTimer) {
-        await tx
-          .delete(activeTimerSessions)
-          .where(eq(activeTimerSessions.userId, userId));
-      }
-
-      return { session: inserted, duplicate: false };
-    });
+    return { session: inserted, duplicate: false };
   } catch (error: any) {
     console.error('Database error in createStudySessionTransactional:', error);
     throw new Error(error.message || 'Failed to record study session.', { cause: error });
@@ -667,74 +666,73 @@ export async function updateStudySessionTransactional(
   }>
 ) {
   try {
-    return await db.transaction(async (tx) => {
-      const existing = await tx
-        .select()
-        .from(studySessions)
-        .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)));
+    const tx = db;
+    const existing = await tx
+      .select()
+      .from(studySessions)
+      .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)));
 
-      if (existing.length === 0) {
-        throw new Error('Study session not found or access denied.');
-      }
+    if (existing.length === 0) {
+      throw new Error('Study session not found or access denied.');
+    }
 
-      const prev = existing[0];
-      const subjectId = data.subjectId ?? prev.subjectId;
-      const startTime = data.startTime ?? prev.startTime;
-      const endTime = data.endTime ?? prev.endTime;
-      const topic = data.topic ? data.topic.trim() : prev.topic;
-      const notes = data.notes !== undefined ? data.notes.trim() : prev.notes;
-      const productivityRating = data.productivityRating ?? prev.productivityRating;
+    const prev = existing[0];
+    const subjectId = data.subjectId ?? prev.subjectId;
+    const startTime = data.startTime ?? prev.startTime;
+    const endTime = data.endTime ?? prev.endTime;
+    const topic = data.topic ? data.topic.trim() : prev.topic;
+    const notes = data.notes !== undefined ? data.notes.trim() : prev.notes;
+    const productivityRating = data.productivityRating ?? prev.productivityRating;
 
-      const subRows = await tx
-        .select()
-        .from(subjects)
-        .where(and(eq(subjects.id, subjectId), eq(subjects.userId, userId)));
-      if (subRows.length === 0) {
-        throw new Error('Selected subject not found or access denied.');
-      }
+    const subRows = await tx
+      .select()
+      .from(subjects)
+      .where(and(eq(subjects.id, subjectId), eq(subjects.userId, userId)));
+    if (subRows.length === 0) {
+      throw new Error('Selected subject not found or access denied.');
+    }
 
-      const durationSeconds = Math.round(
-        (endTime.getTime() - startTime.getTime()) / 1000
+    const durationSeconds = Math.round(
+      (endTime.getTime() - startTime.getTime()) / 1000
+    );
+    if (durationSeconds <= 0) {
+      throw new Error('End time must be after start time.');
+    }
+
+    const overlapping = await tx
+      .select()
+      .from(studySessions)
+      .where(
+        and(
+          eq(studySessions.userId, userId),
+          ne(studySessions.id, sessionId),
+          lt(studySessions.startTime, endTime),
+          gt(studySessions.endTime, startTime)
+        )
       );
-      if (durationSeconds <= 0) {
-        throw new Error('End time must be after start time.');
-      }
 
-      const overlapping = await tx
-        .select()
-        .from(studySessions)
-        .where(
-          and(
-            eq(studySessions.userId, userId),
-            ne(studySessions.id, sessionId),
-            lt(studySessions.startTime, endTime),
-            gt(studySessions.endTime, startTime)
-          )
-        );
+    if (overlapping.length > 0) {
+      throw new Error(
+        'Updated time interval overlaps with another recorded study session.'
+      );
+    }
 
-      if (overlapping.length > 0) {
-        throw new Error(
-          'Updated time interval overlaps with another recorded study session.'
-        );
-      }
+    const [updated] = await tx
+      .update(studySessions)
+      .set({
+        subjectId,
+        startTime,
+        endTime,
+        durationSeconds,
+        topic: topic || 'Focused Study',
+        notes: notes || '',
+        productivityRating: productivityRating || 4,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
+      .returning();
 
-      const [updated] = await tx
-        .update(studySessions)
-        .set({
-          subjectId,
-          startTime,
-          endTime,
-          durationSeconds,
-          topic: topic || 'Focused Study',
-          notes: notes || '',
-          productivityRating: productivityRating || 4,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
-        .returning();
-
-      return updated;
-    });
+    return updated;
   } catch (error: any) {
     console.error('Database error in updateStudySessionTransactional:', error);
     throw new Error(error.message || 'Failed to update study session.', { cause: error });
@@ -780,8 +778,8 @@ export async function restoreUserBackupTransactional(
   }
 ) {
   try {
-    await db.transaction(async (tx) => {
-      if (backup.mode === 'replace') {
+    const tx = db;
+    if (backup.mode === 'replace') {
         await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
         await tx.delete(studySessions).where(eq(studySessions.userId, userId));
         await tx.delete(tasks).where(eq(tasks.userId, userId));
@@ -925,7 +923,6 @@ export async function restoreUserBackupTransactional(
           });
         }
       }
-    });
 
     await recalculateGoalsAndAchievements(userId);
   } catch (error: any) {
@@ -939,26 +936,25 @@ export async function restoreUserBackupTransactional(
  */
 export async function deleteUserAccountTransactional(userId: string) {
   try {
-    await db.transaction(async (tx) => {
-      await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
-      await tx.delete(userAchievements).where(eq(userAchievements.userId, userId));
-      await tx.delete(studySessions).where(eq(studySessions.userId, userId));
-      await tx.delete(tasks).where(eq(tasks.userId, userId));
-      await tx.delete(schedules).where(eq(schedules.userId, userId));
-      await tx.delete(goals).where(eq(goals.userId, userId));
-      await tx.delete(subjects).where(eq(subjects.userId, userId));
-      await tx.delete(revisionRecords).where(eq(revisionRecords.userId, userId));
-      await tx
-        .delete(userCurriculumCustomizations)
-        .where(eq(userCurriculumCustomizations.userId, userId));
-      await tx.delete(curriculumTopics).where(eq(curriculumTopics.userId, userId));
-      await tx.delete(curriculumPapers).where(eq(curriculumPapers.userId, userId));
-      await tx.delete(curriculumSubjects).where(eq(curriculumSubjects.userId, userId));
-      await tx
-        .delete(notificationPreferences)
-        .where(eq(notificationPreferences.userId, userId));
-      await tx.delete(profiles).where(eq(profiles.userId, userId));
-    });
+    const tx = db;
+    await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
+    await tx.delete(userAchievements).where(eq(userAchievements.userId, userId));
+    await tx.delete(studySessions).where(eq(studySessions.userId, userId));
+    await tx.delete(tasks).where(eq(tasks.userId, userId));
+    await tx.delete(schedules).where(eq(schedules.userId, userId));
+    await tx.delete(goals).where(eq(goals.userId, userId));
+    await tx.delete(subjects).where(eq(subjects.userId, userId));
+    await tx.delete(revisionRecords).where(eq(revisionRecords.userId, userId));
+    await tx
+      .delete(userCurriculumCustomizations)
+      .where(eq(userCurriculumCustomizations.userId, userId));
+    await tx.delete(curriculumTopics).where(eq(curriculumTopics.userId, userId));
+    await tx.delete(curriculumPapers).where(eq(curriculumPapers.userId, userId));
+    await tx.delete(curriculumSubjects).where(eq(curriculumSubjects.userId, userId));
+    await tx
+      .delete(notificationPreferences)
+      .where(eq(notificationPreferences.userId, userId));
+    await tx.delete(profiles).where(eq(profiles.userId, userId));
   } catch (error) {
     console.error('Database error in deleteUserAccountTransactional:', error);
     throw new Error('Failed to delete account data.', { cause: error });
@@ -1240,41 +1236,40 @@ export async function addCustomCurriculumSubject(
     30
   );
 
-  return await db.transaction(async (tx) => {
-    const existing = await tx
-      .select({ displayOrder: curriculumSubjects.displayOrder })
-      .from(curriculumSubjects)
-      .orderBy(desc(curriculumSubjects.displayOrder))
-      .limit(1);
+  const tx = db;
+  const existing = await tx
+    .select({ displayOrder: curriculumSubjects.displayOrder })
+    .from(curriculumSubjects)
+    .orderBy(desc(curriculumSubjects.displayOrder))
+    .limit(1);
 
-    const nextOrder = (existing[0]?.displayOrder || 0) + 1;
+  const nextOrder = (existing[0]?.displayOrder || 0) + 1;
 
-    const [subject] = await tx
-      .insert(curriculumSubjects)
-      .values({
-        userId,
-        name: data.name.trim(),
-        code,
-        color: data.color || '#2563EB',
-        icon: data.icon || 'BookOpen',
-        displayOrder: nextOrder,
-      })
-      .returning();
+  const [subject] = await tx
+    .insert(curriculumSubjects)
+    .values({
+      userId,
+      name: data.name.trim(),
+      code,
+      color: data.color || '#2563EB',
+      icon: data.icon || 'BookOpen',
+      displayOrder: nextOrder,
+    })
+    .returning();
 
-    // Create a default paper/section
-    const [paper] = await tx
-      .insert(curriculumPapers)
-      .values({
-        userId,
-        subjectId: subject.id,
-        title: data.defaultPaperTitle || '১ম পত্র / Main Paper',
-        paperCode: `${code}_main`,
-        displayOrder: 1,
-      })
-      .returning();
+  // Create a default paper/section
+  const [paper] = await tx
+    .insert(curriculumPapers)
+    .values({
+      userId,
+      subjectId: subject.id,
+      title: data.defaultPaperTitle || '১ম পত্র / Main Paper',
+      paperCode: `${code}_main`,
+      displayOrder: 1,
+    })
+    .returning();
 
-    return { subject, paper };
-  });
+  return { subject, paper };
 }
 
 /**

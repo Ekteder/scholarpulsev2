@@ -19,6 +19,7 @@ async function requireUser() {
 export async function createGoalAction(raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const goal = await createGoal(user.uid, parsed);
 
   if (goal) {
@@ -26,6 +27,7 @@ export async function createGoalAction(raw: unknown) {
       userId: user.uid,
       eventType: 'goal:create',
       payload: { goal },
+      clientDeviceId,
     });
   }
 
@@ -36,6 +38,7 @@ export async function createGoalAction(raw: unknown) {
 export async function updateGoalAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const goal = await updateGoal(user.uid, id, parsed);
 
   if (goal) {
@@ -43,6 +46,7 @@ export async function updateGoalAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'goal:update',
       payload: { goal },
+      clientDeviceId,
     });
   }
 
@@ -50,7 +54,7 @@ export async function updateGoalAction(id: string, raw: unknown) {
   return { success: true, goal };
 }
 
-export async function deleteGoalAction(id: string) {
+export async function deleteGoalAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteGoal(user.uid, id);
 
@@ -58,6 +62,7 @@ export async function deleteGoalAction(id: string) {
     userId: user.uid,
     eventType: 'goal:delete',
     payload: { goalId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

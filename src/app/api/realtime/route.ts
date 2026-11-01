@@ -72,6 +72,14 @@ export async function GET(req: NextRequest) {
           `event: timer:update\ndata: ${JSON.stringify({
             timer: initialTimer,
             fromBaseline: true,
+            _originDeviceId: 'server_baseline',
+          })}\n\n`
+        );
+      } else {
+        safeEnqueue(
+          `event: timer:delete\ndata: ${JSON.stringify({
+            fromBaseline: true,
+            _originDeviceId: 'server_baseline',
           })}\n\n`
         );
       }

@@ -59,12 +59,14 @@ export async function completeOnboardingAction(raw: unknown) {
     ...parsed,
     initialSubjects,
   });
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const data = await getUserWorkspaceData(user.uid, user.email, parsed.fullName);
 
   await publishSyncEvent({
     userId: user.uid,
     eventType: 'workspace:refresh',
     payload: {},
+    clientDeviceId,
   });
 
   revalidatePath('/');
@@ -74,6 +76,7 @@ export async function completeOnboardingAction(raw: unknown) {
 export async function updateProfileAction(raw: unknown) {
   const user = await requireUser();
   const parsed = ProfileUpdateSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const profile = await updateUserProfile(user.uid, parsed);
 
   if (profile) {
@@ -81,6 +84,7 @@ export async function updateProfileAction(raw: unknown) {
       userId: user.uid,
       eventType: 'profile:update',
       payload: { profile },
+      clientDeviceId,
     });
   }
 
@@ -91,6 +95,7 @@ export async function updateProfileAction(raw: unknown) {
 export async function updateNotificationPreferencesAction(raw: unknown) {
   const user = await requireUser();
   const parsed = NotificationPreferencesSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const prefs = await updateUserNotificationPreferences(user.uid, parsed);
 
   if (prefs) {
@@ -98,6 +103,7 @@ export async function updateNotificationPreferencesAction(raw: unknown) {
       userId: user.uid,
       eventType: 'preferences:update',
       payload: { preferences: prefs },
+      clientDeviceId,
     });
   }
 
@@ -111,6 +117,7 @@ export async function restoreBackupAction(raw: unknown) {
     throw new Error('Invalid backup format');
   }
   const payload = raw as any;
+  const clientDeviceId = payload?.clientDeviceId;
   await restoreUserDataFromBackup(user.uid, user.email, {
     mode: payload.mode || 'replace',
     ...payload,
@@ -121,6 +128,7 @@ export async function restoreBackupAction(raw: unknown) {
     userId: user.uid,
     eventType: 'workspace:refresh',
     payload: {},
+    clientDeviceId,
   });
 
   revalidatePath('/');

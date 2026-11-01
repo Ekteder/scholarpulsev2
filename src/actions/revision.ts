@@ -38,6 +38,7 @@ export async function getRevisionWorkspaceAction() {
 export async function toggleRevisionAction(raw: unknown) {
   const user = await requireUser();
   const parsed = RevisionToggleSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await toggleRevisionRecord(user.uid, parsed);
 
   await publishSyncEvent({
@@ -50,6 +51,7 @@ export async function toggleRevisionAction(raw: unknown) {
       category: parsed.category,
       isCompleted: parsed.isCompleted,
     },
+    clientDeviceId,
   });
 
   revalidatePath('/');
@@ -59,19 +61,21 @@ export async function toggleRevisionAction(raw: unknown) {
 export async function saveDetailedRevisionRecordAction(raw: unknown) {
   const user = await requireUser();
   const parsed = RevisionDetailedRecordSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await saveDetailedRevisionRecord(user.uid, parsed as any);
 
   await publishSyncEvent({
     userId: user.uid,
     eventType: 'revision:detailed',
     payload: { record: result },
+    clientDeviceId,
   });
 
   revalidatePath('/');
   return { success: true, record: result };
 }
 
-export async function deleteRevisionRecordAction(id: string) {
+export async function deleteRevisionRecordAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteRevisionRecord(user.uid, id);
 
@@ -79,6 +83,7 @@ export async function deleteRevisionRecordAction(id: string) {
     userId: user.uid,
     eventType: 'revision:delete',
     payload: { recordId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');
@@ -88,6 +93,7 @@ export async function deleteRevisionRecordAction(id: string) {
 export async function addCustomCurriculumTopicAction(raw: unknown) {
   const user = await requireUser();
   const parsed = CustomCurriculumTopicSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await addCustomCurriculumTopic(user.uid, parsed);
 
   if (result) {
@@ -95,6 +101,7 @@ export async function addCustomCurriculumTopicAction(raw: unknown) {
       userId: user.uid,
       eventType: 'revision:topic:create',
       payload: { topic: result },
+      clientDeviceId,
     });
   }
 
@@ -105,6 +112,7 @@ export async function addCustomCurriculumTopicAction(raw: unknown) {
 export async function addCustomCurriculumSubjectAction(raw: unknown) {
   const user = await requireUser();
   const parsed = CustomCurriculumSubjectSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await addCustomCurriculumSubject(user.uid, parsed);
 
   if (result) {
@@ -112,6 +120,7 @@ export async function addCustomCurriculumSubjectAction(raw: unknown) {
       userId: user.uid,
       eventType: 'revision:subject:create',
       payload: { subject: result },
+      clientDeviceId,
     });
   }
 
@@ -122,6 +131,7 @@ export async function addCustomCurriculumSubjectAction(raw: unknown) {
 export async function updateCurriculumCustomizationAction(raw: unknown) {
   const user = await requireUser();
   const parsed = CurriculumCustomizationSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const result = await updateCurriculumCustomization(user.uid, parsed);
 
   if (result) {
@@ -129,6 +139,7 @@ export async function updateCurriculumCustomizationAction(raw: unknown) {
       userId: user.uid,
       eventType: 'revision:customization:update',
       payload: { customization: result },
+      clientDeviceId,
     });
   }
 
@@ -139,6 +150,7 @@ export async function updateCurriculumCustomizationAction(raw: unknown) {
 export async function createCurriculumResourceAction(raw: unknown) {
   const user = await requireUser();
   const parsed = CurriculumResourceSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const resource = await createCurriculumResource(user.uid, parsed);
 
   if (resource) {
@@ -146,6 +158,7 @@ export async function createCurriculumResourceAction(raw: unknown) {
       userId: user.uid,
       eventType: 'revision:resource:create',
       payload: { resource },
+      clientDeviceId,
     });
   }
 
@@ -153,7 +166,7 @@ export async function createCurriculumResourceAction(raw: unknown) {
   return { success: true, resource };
 }
 
-export async function deleteCurriculumResourceAction(id: string) {
+export async function deleteCurriculumResourceAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteCurriculumResource(user.uid, id);
 
@@ -161,6 +174,7 @@ export async function deleteCurriculumResourceAction(id: string) {
     userId: user.uid,
     eventType: 'revision:resource:delete',
     payload: { resourceId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

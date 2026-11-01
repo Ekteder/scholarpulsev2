@@ -75,8 +75,29 @@ export async function publishSyncEvent({
   clientDeviceId?: string;
 }): Promise<RealtimeSyncEvent | null> {
   try {
-    const payloadStr =
-      typeof payload === 'string' ? payload : JSON.stringify(payload ?? {});
+    let payloadStr = '';
+    if (typeof payload === 'object' && payload !== null) {
+      payloadStr = JSON.stringify({
+        ...payload,
+        _originDeviceId: clientDeviceId,
+      });
+    } else if (typeof payload === 'string') {
+      try {
+        const parsed = JSON.parse(payload);
+        if (typeof parsed === 'object' && parsed !== null) {
+          payloadStr = JSON.stringify({
+            ...parsed,
+            _originDeviceId: clientDeviceId,
+          });
+        } else {
+          payloadStr = payload;
+        }
+      } catch {
+        payloadStr = payload;
+      }
+    } else {
+      payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
+    }
 
     const [inserted] = await db
       .insert(syncEvents)

@@ -280,20 +280,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
           if (localRaw) {
             try {
-              const parsedLocal: ActiveTimerSession = JSON.parse(localRaw);
               if (!workspace.activeTimer) {
-                if (parsedLocal.id) {
-                  resolvedTimer = null;
-                  localStorage.removeItem(localKey);
-                } else {
-                  resolvedTimer = parsedLocal;
-                  syncActiveTimerAction(parsedLocal).then((res) => {
-                    if (res?.success && res.timer) {
-                      localStorage.setItem(localKey, JSON.stringify(res.timer));
-                      setActiveTimer(res.timer);
-                    }
-                  }).catch(() => {});
-                }
+                // Cloud confirms no active timer: remove stale local cache, do not resurrect!
+                resolvedTimer = null;
+                localStorage.removeItem(localKey);
               } else {
                 resolvedTimer = workspace.activeTimer;
               }
@@ -331,7 +321,37 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Central Real-time Sync Event Handler (SSE + BroadcastChannel)
   const handleIncomingSyncEvent = useCallback(
     (eventType: string, payload: any, originDeviceId?: string) => {
+      const isFromSelf = Boolean(originDeviceId && originDeviceId === getClientDeviceId());
+
       switch (eventType) {
+        case 'connected': {
+          const initialTimer = payload?.activeTimer as ActiveTimerSession | null | undefined;
+          if (initialTimer) {
+            setActiveTimer((current) => {
+              if (
+                !current ||
+                (initialTimer.stateVersion || 0) >= (current.stateVersion || 0) ||
+                initialTimer.idempotencyKey !== current.idempotencyKey
+              ) {
+                if (user && typeof window !== 'undefined') {
+                  localStorage.setItem(
+                    `scholarpulse_timer_${user.uid}`,
+                    JSON.stringify(initialTimer)
+                  );
+                }
+                return initialTimer;
+              }
+              return current;
+            });
+          } else if (initialTimer === null) {
+            setActiveTimer(null);
+            if (user && typeof window !== 'undefined') {
+              localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
+            }
+          }
+          break;
+        }
+
         case 'timer:update': {
           const incomingTimer = payload?.timer as ActiveTimerSession | undefined;
           if (!incomingTimer) return;
@@ -415,7 +435,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               };
             });
           }
-          refreshWorkspace().catch(() => {});
+          if (!isFromSelf) {
+            refreshWorkspace().catch(() => {});
+          }
           break;
         }
 
@@ -432,7 +454,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               };
             });
           }
-          refreshWorkspace().catch(() => {});
+          if (!isFromSelf) {
+            refreshWorkspace().catch(() => {});
+          }
           break;
         }
 
@@ -447,7 +471,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               };
             });
           }
-          refreshWorkspace().catch(() => {});
+          if (!isFromSelf) {
+            refreshWorkspace().catch(() => {});
+          }
           break;
         }
 
@@ -623,6 +649,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         case 'revision:toggle': {
           const { record, topicId, category, isCompleted } = payload || {};
           if (topicId && category) {
+            if (!isFromSelf) {
+              setData((prev) => {
+                if (!prev) return null;
+                const prevRecord = revisionData?.records.find(
+                  (r) => r.topicId === topicId && r.category === category
+                );
+                const wasCompleted = prevRecord?.isCompleted ?? false;
+                const xpDelta = !wasCompleted && isCompleted ? 25 : wasCompleted && !isCompleted ? -25 : 0;
+                if (xpDelta === 0) return prev;
+                return {
+                  ...prev,
+                  profile: {
+                    ...prev.profile,
+                    gamificationXp: Math.max(0, (prev.profile.gamificationXp || 0) + xpDelta),
+                  },
+                };
+              });
+            }
+
             setRevisionData((prev) => {
               if (!prev) return null;
               const filtered = prev.records.filter(
@@ -687,7 +732,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         case 'revision:subject:create':
         case 'revision:refresh': {
-          fetchRevisionWorkspace(true).catch(() => {});
+          if (!isFromSelf) {
+            fetchRevisionWorkspace(true).catch(() => {});
+          }
           break;
         }
 
@@ -771,7 +818,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         }
 
         case 'workspace:refresh': {
-          refreshWorkspace().catch(() => {});
+          if (!isFromSelf) {
+            refreshWorkspace().catch(() => {});
+          }
           break;
         }
 
@@ -828,11 +877,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         broadcastLocal('timer:delete', {});
         await deleteActiveTimerAction(deviceId).catch(() => {});
       } else {
+        const timerWithDevice = { ...nextTimer, clientDeviceId: deviceId };
         if (typeof window !== 'undefined') {
-          localStorage.setItem(localKey, JSON.stringify(nextTimer));
+          localStorage.setItem(localKey, JSON.stringify(timerWithDevice));
         }
-        broadcastLocal('timer:update', { timer: nextTimer });
-        await syncActiveTimerAction(nextTimer).catch(() => {});
+        broadcastLocal('timer:update', { timer: timerWithDevice });
+        const res = await syncActiveTimerAction(timerWithDevice).catch(() => null);
+        if (res?.success && res.timer) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(localKey, JSON.stringify(res.timer));
+          }
+          setActiveTimer(res.timer);
+        }
       }
     },
     [user, broadcastLocal]
@@ -840,7 +896,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Complete onboarding
   const completeOnboarding = useCallback(async (payload: any) => {
-    const res = await completeOnboardingAction(payload);
+    const res = await completeOnboardingAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (res.success && res.data) {
       setData(res.data as unknown as WorkspaceData);
       broadcastLocal('workspace:refresh', {});
@@ -854,7 +910,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Update profile
   const updateProfile = useCallback(async (payload: Partial<Profile>) => {
-    const res = await updateProfileAction(payload);
+    const res = await updateProfileAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (res.success && res.profile) {
       setData((prev) => prev ? { ...prev, profile: res.profile as Profile } : null);
       if (payload.themePreference) {
@@ -871,7 +927,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Update notification prefs
   const updateNotificationPrefs = useCallback(async (payload: Partial<NotificationPreferences>) => {
-    const res = await updateNotificationPreferencesAction(payload);
+    const res = await updateNotificationPreferencesAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (res.success && res.preferences) {
       setData((prev) => prev ? { ...prev, notificationPreferences: res.preferences as NotificationPreferences } : null);
       broadcastLocal('preferences:update', { preferences: res.preferences });
@@ -885,7 +941,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Subjects CRUD
   const createSubject = useCallback(async (payload: Partial<Subject>) => {
-    const res = await createSubjectAction(payload);
+    const res = await createSubjectAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.subject) throw new Error('Failed to create subject');
     const created = res.subject as Subject;
     setData((prev) => prev ? { ...prev, subjects: [...prev.subjects, created] } : null);
@@ -895,7 +951,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const updateSubject = useCallback(async (id: string, payload: Partial<Subject>) => {
-    const res = await updateSubjectAction(id, payload);
+    const res = await updateSubjectAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.subject) throw new Error('Failed to update subject');
     const updated = res.subject as Subject;
     setData((prev) => prev ? {
@@ -908,7 +964,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const deleteSubject = useCallback(async (id: string) => {
-    await deleteSubjectAction(id);
+    await deleteSubjectAction(id, getClientDeviceId());
     setData((prev) => prev ? {
       ...prev,
       subjects: prev.subjects.filter((s) => s.id !== id),
@@ -919,7 +975,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Study Sessions CRUD
   const createSession = useCallback(async (payload: any) => {
-    const res = await createStudySessionAction(payload);
+    const res = await createStudySessionAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.session) throw new Error('Failed to save study session');
     const session = res.session as StudySession;
     broadcastLocal('session:create', { session });
@@ -929,7 +985,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, refreshWorkspace, broadcastLocal]);
 
   const updateSession = useCallback(async (id: string, payload: any) => {
-    const res = await updateStudySessionAction(id, payload);
+    const res = await updateStudySessionAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.session) throw new Error('Failed to update session');
     const session = res.session as StudySession;
     broadcastLocal('session:update', { session });
@@ -939,7 +995,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, refreshWorkspace, broadcastLocal]);
 
   const deleteSession = useCallback(async (id: string) => {
-    await deleteStudySessionAction(id);
+    await deleteStudySessionAction(id, getClientDeviceId());
     broadcastLocal('session:delete', { sessionId: id });
     await refreshWorkspace();
     addToast({ title: 'Session Deleted', description: 'Session was removed from log.', variant: 'default' });
@@ -947,7 +1003,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Tasks CRUD
   const createTask = useCallback(async (payload: any) => {
-    const res = await createTaskAction(payload);
+    const res = await createTaskAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.task) throw new Error('Failed to create task');
     const task = res.task as unknown as TaskItem;
     setData((prev) => prev ? { ...prev, tasks: [...prev.tasks, task] } : null);
@@ -957,7 +1013,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const updateTask = useCallback(async (id: string, payload: any) => {
-    const res = await updateTaskAction(id, payload);
+    const res = await updateTaskAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.task) throw new Error('Failed to update task');
     const task = res.task as unknown as TaskItem;
     setData((prev) => prev ? {
@@ -969,7 +1025,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [broadcastLocal]);
 
   const deleteTask = useCallback(async (id: string) => {
-    await deleteTaskAction(id);
+    await deleteTaskAction(id, getClientDeviceId());
     setData((prev) => prev ? {
       ...prev,
       tasks: prev.tasks.filter((t) => t.id !== id),
@@ -980,7 +1036,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Schedules CRUD
   const createSchedule = useCallback(async (payload: any) => {
-    const res = await createScheduleAction(payload);
+    const res = await createScheduleAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.schedule) throw new Error('Failed to create schedule');
     const schedule = res.schedule as unknown as ScheduleItem;
     setData((prev) => prev ? { ...prev, schedules: [...prev.schedules, schedule] } : null);
@@ -990,7 +1046,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const updateSchedule = useCallback(async (id: string, payload: any) => {
-    const res = await updateScheduleAction(id, payload);
+    const res = await updateScheduleAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.schedule) throw new Error('Failed to update schedule');
     const schedule = res.schedule as unknown as ScheduleItem;
     setData((prev) => prev ? {
@@ -1002,7 +1058,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [broadcastLocal]);
 
   const deleteSchedule = useCallback(async (id: string) => {
-    await deleteScheduleAction(id);
+    await deleteScheduleAction(id, getClientDeviceId());
     setData((prev) => prev ? {
       ...prev,
       schedules: prev.schedules.filter((s) => s.id !== id),
@@ -1013,7 +1069,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Goals CRUD
   const createGoal = useCallback(async (payload: any) => {
-    const res = await createGoalAction(payload);
+    const res = await createGoalAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.goal) throw new Error('Failed to create goal');
     const goal = res.goal as unknown as GoalItem;
     setData((prev) => prev ? { ...prev, goals: [...prev.goals, goal] } : null);
@@ -1023,7 +1079,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const updateGoal = useCallback(async (id: string, payload: any) => {
-    const res = await updateGoalAction(id, payload);
+    const res = await updateGoalAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.goal) throw new Error('Failed to update goal');
     const goal = res.goal as unknown as GoalItem;
     setData((prev) => prev ? {
@@ -1035,7 +1091,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [broadcastLocal]);
 
   const deleteGoal = useCallback(async (id: string) => {
-    await deleteGoalAction(id);
+    await deleteGoalAction(id, getClientDeviceId());
     setData((prev) => prev ? {
       ...prev,
       goals: prev.goals.filter((g) => g.id !== id),
@@ -1046,7 +1102,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Backup & Account
   const restoreBackup = useCallback(async (mode: 'merge' | 'replace', backupData: any) => {
-    const res = await restoreBackupAction(backupData);
+    const res = await restoreBackupAction({ ...backupData, mode, clientDeviceId: getClientDeviceId() });
     if (res.success && res.data) {
       setData(res.data as unknown as WorkspaceData);
       broadcastLocal('workspace:refresh', {});
@@ -1097,7 +1153,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     activityDate?: string;
     notes?: string;
   }) => {
-    const res = await toggleRevisionAction(opts);
+    const res = await toggleRevisionAction({ ...opts, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.record) throw new Error('Failed to toggle revision');
     const rec = res.record as unknown as RevisionRecord;
     
@@ -1149,7 +1205,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const isCompleted = opts.isCompleted !== undefined ? opts.isCompleted : true;
     const xpDelta = !wasCompleted && isCompleted ? 25 : wasCompleted && !isCompleted ? -25 : 0;
 
-    const res = await saveDetailedRevisionRecordAction(opts);
+    const res = await saveDetailedRevisionRecordAction({ ...opts, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.record) throw new Error('Failed to save detailed record');
     const rec = res.record as unknown as RevisionRecord;
 
@@ -1194,7 +1250,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    await deleteRevisionRecordAction(recordId);
+    await deleteRevisionRecordAction(recordId, getClientDeviceId());
     setRevisionData((prev) => {
       if (!prev) return null;
       const nextRecords = prev.records.filter((r) => r.id !== recordId);
@@ -1207,7 +1263,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [revisionData?.records, broadcastLocal]);
 
   const addCustomCurriculumTopicItem = useCallback(async (opts: any) => {
-    const res = await addCustomCurriculumTopicAction(opts);
+    const res = await addCustomCurriculumTopicAction({ ...opts, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.topic) throw new Error('Failed to add custom topic');
     const topic = res.topic as CurriculumTopic;
     setRevisionData((prev) => {
@@ -1221,7 +1277,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [broadcastLocal]);
 
   const addCustomCurriculumSubjectItem = useCallback(async (opts: any) => {
-    const res = await addCustomCurriculumSubjectAction(opts);
+    const res = await addCustomCurriculumSubjectAction({ ...opts, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.subject) throw new Error('Failed to add custom subject');
     const subject = res.subject as { subject: CurriculumSubject; paper: CurriculumPaper };
     broadcastLocal('revision:subject:create', { subject });
@@ -1230,7 +1286,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [fetchRevisionWorkspace, broadcastLocal]);
 
   const updateCurriculumCustomizationItem = useCallback(async (opts: any) => {
-    const res = await updateCurriculumCustomizationAction(opts);
+    const res = await updateCurriculumCustomizationAction({ ...opts, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.customization) throw new Error('Failed to customize');
     const cust = res.customization as UserCurriculumCustomization;
     setRevisionData((prev) => {
@@ -1248,7 +1304,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Spaced Repetition Flashcards
   const createFlashcard = useCallback(async (payload: any) => {
-    const res = await createFlashcardAction(payload);
+    const res = await createFlashcardAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.flashcard) throw new Error('Failed to create flashcard');
     const card = res.flashcard as unknown as FlashcardItem;
     setData((prev) => prev ? { ...prev, flashcards: [...(prev.flashcards || []), card] } : null);
@@ -1258,7 +1314,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const updateFlashcard = useCallback(async (id: string, payload: any) => {
-    const res = await updateFlashcardAction(id, payload);
+    const res = await updateFlashcardAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.flashcard) throw new Error('Failed to update flashcard');
     const card = res.flashcard as unknown as FlashcardItem;
     setData((prev) => prev ? {
@@ -1270,7 +1326,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [broadcastLocal]);
 
   const deleteFlashcard = useCallback(async (id: string) => {
-    await deleteFlashcardAction(id);
+    await deleteFlashcardAction(id, getClientDeviceId());
     setData((prev) => prev ? {
       ...prev,
       flashcards: (prev.flashcards || []).filter((f) => f.id !== id),
@@ -1280,7 +1336,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const reviewFlashcard = useCallback(async (id: string, grade: 1 | 2 | 3 | 4) => {
-    const res = await reviewFlashcardAction({ id, grade });
+    const res = await reviewFlashcardAction({ id, grade, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.flashcard) throw new Error('Failed to review flashcard');
     const card = res.flashcard as unknown as FlashcardItem;
     setData((prev) => {
@@ -1296,7 +1352,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   // Chapter Resources
   const createResource = useCallback(async (payload: any) => {
-    const res = await createCurriculumResourceAction(payload);
+    const res = await createCurriculumResourceAction({ ...payload, clientDeviceId: getClientDeviceId() });
     if (!res.success || !res.resource) throw new Error('Failed to save resource');
     const resource = res.resource as unknown as CurriculumResourceItem;
     setRevisionData((prev) => {
@@ -1311,7 +1367,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const deleteResource = useCallback(async (id: string) => {
-    await deleteCurriculumResourceAction(id);
+    await deleteCurriculumResourceAction(id, getClientDeviceId());
     setRevisionData((prev) => {
       if (!prev) return null;
       const updated = {

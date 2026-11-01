@@ -19,6 +19,7 @@ async function requireUser() {
 export async function createScheduleAction(raw: unknown) {
   const user = await requireUser();
   const parsed = ScheduleSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const schedule = await createSchedule(user.uid, parsed);
 
   if (schedule) {
@@ -26,6 +27,7 @@ export async function createScheduleAction(raw: unknown) {
       userId: user.uid,
       eventType: 'schedule:create',
       payload: { schedule },
+      clientDeviceId,
     });
   }
 
@@ -36,6 +38,7 @@ export async function createScheduleAction(raw: unknown) {
 export async function updateScheduleAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = ScheduleSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const schedule = await updateSchedule(user.uid, id, parsed);
 
   if (schedule) {
@@ -43,6 +46,7 @@ export async function updateScheduleAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'schedule:update',
       payload: { schedule },
+      clientDeviceId,
     });
   }
 
@@ -50,7 +54,7 @@ export async function updateScheduleAction(id: string, raw: unknown) {
   return { success: true, schedule };
 }
 
-export async function deleteScheduleAction(id: string) {
+export async function deleteScheduleAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteSchedule(user.uid, id);
 
@@ -58,6 +62,7 @@ export async function deleteScheduleAction(id: string) {
     userId: user.uid,
     eventType: 'schedule:delete',
     payload: { scheduleId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

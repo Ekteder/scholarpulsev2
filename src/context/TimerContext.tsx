@@ -13,6 +13,8 @@ import { useWorkspace } from './WorkspaceContext';
 import { ActiveTimerSession, StudySession } from '../types/index';
 import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { createStudySessionAction } from '../actions/sessions';
+import { completePomodoroPhaseAction } from '../actions/timer';
+import { getClientDeviceId } from '../hooks/useRealtimeSync';
 
 export interface TimerContextValue {
   activeTimer: ActiveTimerSession | null;
@@ -37,16 +39,6 @@ export interface TimerContextValue {
 }
 
 const TimerContext = createContext<TimerContextValue | null>(null);
-
-function getClientDeviceId(): string {
-  if (typeof window === 'undefined') return 'server_device';
-  let id = localStorage.getItem('scholarpulse_device_id');
-  if (!id) {
-    id = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-    localStorage.setItem('scholarpulse_device_id', id);
-  }
-  return id;
-}
 
 export function TimerProvider({ children }: { children: React.ReactNode }) {
   const {
@@ -111,98 +103,57 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
 
       const handlePhaseComplete = async () => {
         try {
-          const prefs = data?.notificationPreferences;
-          const profile = data?.profile;
-          const focusMins = profile?.pomodoroFocusMinutes || 25;
-          const shortBreakMins = profile?.pomodoroShortBreakMinutes || 5;
-          const longBreakMins = profile?.pomodoroLongBreakMinutes || 15;
-          const longBreakInterval = profile?.pomodoroLongBreakInterval || 4;
+          const deviceId = getClientDeviceId();
+          const res = await completePomodoroPhaseAction({
+            idempotencyKey: activeTimer.idempotencyKey,
+            completedPhase: activeTimer.phase as any,
+            completedPomodoros: activeTimer.completedPomodoros,
+            clientDeviceId: deviceId,
+          });
 
-          if (activeTimer.phase === 'focus') {
-            if (prefs?.soundChimesEnabled !== false) {
-              playTimerChime('focus_end');
-            }
-            if (prefs?.browserNotificationsEnabled) {
-              sendBrowserNotification(
-                'Pomodoro Focus Complete!',
-                `Great work on "${activeTimer.topic}". Time for a rejuvenating break.`
-              );
+          if (res?.success && res.timer) {
+            if (user && typeof window !== 'undefined') {
+              localStorage.setItem(`scholarpulse_timer_${user.uid}`, JSON.stringify(res.timer));
             }
 
-            const focusDurationSec = activeTimer.targetDurationSeconds;
-            const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - focusDurationSec * 1000);
-            const cycleIdempotencyKey = `${activeTimer.idempotencyKey}_pomo_${
-              activeTimer.completedPomodoros + 1
-            }`;
-
-            // Save completed session block via Server Action
-            createStudySessionAction({
-              subjectId: activeTimer.subjectId,
-              startTime: startTime.toISOString(),
-              endTime: endTime.toISOString(),
-              durationSeconds: focusDurationSec,
-              topic: activeTimer.topic,
-              notes: activeTimer.notes || 'Pomodoro focus cycle completed',
-              productivityRating: 5,
-              sessionType: 'timer',
-              idempotencyKey: cycleIdempotencyKey,
-            }).catch(() => {});
-
-            const nextCompletedCount = activeTimer.completedPomodoros + 1;
-            const isLongBreak = nextCompletedCount % longBreakInterval === 0;
-            const breakDurationSeconds = (isLongBreak ? longBreakMins : shortBreakMins) * 60;
-            const nowIso = new Date().toISOString();
-
-            const nextTimer: ActiveTimerSession = {
-              ...activeTimer,
-              phase: isLongBreak ? 'long_break' : 'short_break',
-              status: 'running',
-              startedAt: nowIso,
-              lastResumedAt: nowIso,
-              accumulatedSeconds: 0,
-              targetDurationSeconds: breakDurationSeconds,
-              completedPomodoros: nextCompletedCount,
-              stateVersion: (activeTimer.stateVersion || 1) + 1,
-            };
-
-            await persistActiveTimer(nextTimer);
-            addToast({
-              title: isLongBreak ? 'Long Break Started' : 'Short Break Started',
-              description: `Rest for ${Math.round(breakDurationSeconds / 60)} minutes.`,
-              variant: 'default',
-            });
-          } else {
-            // Break completed -> Transition to next focus
-            if (prefs?.soundChimesEnabled !== false) {
-              playTimerChime('break_end');
+            if (!res.alreadyTransitioned) {
+              const prefs = data?.notificationPreferences;
+              if (activeTimer.phase === 'focus') {
+                if (prefs?.soundChimesEnabled !== false) {
+                  playTimerChime('focus_end');
+                }
+                if (prefs?.browserNotificationsEnabled) {
+                  sendBrowserNotification(
+                    'Pomodoro Focus Complete!',
+                    `Great work on "${activeTimer.topic}". Time for a rejuvenating break.`
+                  );
+                }
+                addToast({
+                  title: res.timer.phase === 'long_break' ? 'Long Break Started' : 'Short Break Started',
+                  description: `Rest for ${Math.round(res.timer.targetDurationSeconds / 60)} minutes.`,
+                  variant: 'default',
+                });
+              } else {
+                if (prefs?.soundChimesEnabled !== false) {
+                  playTimerChime('break_end');
+                }
+                if (prefs?.browserNotificationsEnabled) {
+                  sendBrowserNotification(
+                    'Break Finished!',
+                    `Ready to jump back into "${activeTimer.topic}"?`
+                  );
+                }
+                addToast({
+                  title: 'Break Finished',
+                  description: 'Next focus interval started.',
+                  variant: 'default',
+                });
+              }
+              await refreshWorkspace();
             }
-            if (prefs?.browserNotificationsEnabled) {
-              sendBrowserNotification(
-                'Break Finished!',
-                `Ready to jump back into "${activeTimer.topic}"?`
-              );
-            }
-
-            const nowIso = new Date().toISOString();
-            const nextTimer: ActiveTimerSession = {
-              ...activeTimer,
-              phase: 'focus',
-              status: 'running',
-              startedAt: nowIso,
-              lastResumedAt: nowIso,
-              accumulatedSeconds: 0,
-              targetDurationSeconds: focusMins * 60,
-              stateVersion: (activeTimer.stateVersion || 1) + 1,
-            };
-
-            await persistActiveTimer(nextTimer);
-            addToast({
-              title: 'Break Finished',
-              description: 'Next focus interval started.',
-              variant: 'default',
-            });
           }
+        } catch (err) {
+          console.error('completePomodoroPhase error:', err);
         } finally {
           pomodoroTransitionLock.current = false;
         }
@@ -213,9 +164,10 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   }, [
     activeTimer,
     timerElapsedSeconds,
+    user,
     data?.notificationPreferences,
     data?.profile,
-    persistActiveTimer,
+    refreshWorkspace,
     addToast,
   ]);
 
@@ -335,6 +287,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         productivityRating: opts?.productivityRating || 5,
         sessionType: 'timer' as const,
         idempotencyKey: `${activeTimer.idempotencyKey}_final`,
+        clientDeviceId: getClientDeviceId(),
       };
 
       persistActiveTimer(null);

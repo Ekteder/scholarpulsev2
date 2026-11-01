@@ -62,8 +62,35 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const lastEventIdRef = useRef<number>(0);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+
+  // Initialize cursor from session storage if available
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return;
+    try {
+      const stored = sessionStorage.getItem(`scholarpulse_last_event_${userId}`);
+      if (stored) {
+        const parsed = parseInt(stored, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          lastEventIdRef.current = Math.max(lastEventIdRef.current, parsed);
+        }
+      }
+    } catch {}
+  }, [userId]);
+
+  const updateLastEventId = useCallback((id: number, uid?: string) => {
+    if (id > lastEventIdRef.current) {
+      lastEventIdRef.current = id;
+      if (uid && typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(`scholarpulse_last_event_${uid}`, String(id));
+        } catch {}
+      }
+    }
+  }, []);
 
   // 1. BroadcastChannel for 0ms cross-tab sync on the same device
   const broadcastLocal = useCallback(
@@ -76,6 +103,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
             eventType,
             payload,
             clientDeviceId: deviceId,
+            originDeviceId: deviceId,
             timestamp: Date.now(),
           });
         } catch (err) {
@@ -103,10 +131,11 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
         bc = new BroadcastChannel(channelName);
         bc.onmessage = (event) => {
           if (isCleanedUp) return;
-          const { eventType, payload, clientDeviceId } = event.data || {};
+          const { eventType, payload, clientDeviceId, originDeviceId } = event.data || {};
+          const origin = originDeviceId || clientDeviceId;
           if (eventType && onEventRef.current) {
             setLastSyncTime(new Date());
-            onEventRef.current(eventType, payload, clientDeviceId);
+            onEventRef.current(eventType, payload, origin);
           }
         };
         broadcastChannelRef.current = bc;
@@ -120,6 +149,10 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
 
     const connectSSE = () => {
       if (isCleanedUp) return;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (es) {
         try {
           es.close();
@@ -127,7 +160,9 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       }
 
       setSyncStatus('connecting');
-      const url = `/api/realtime?deviceId=${encodeURIComponent(deviceId)}`;
+      const lastId = lastEventIdRef.current;
+      const lastParam = lastId > 0 ? `&lastEventId=${lastId}` : '';
+      const url = `/api/realtime?deviceId=${encodeURIComponent(deviceId)}${lastParam}`;
       es = new EventSource(url);
       eventSourceRef.current = es;
 
@@ -139,38 +174,55 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
 
       es.onerror = () => {
         if (isCleanedUp) return;
-        // EventSource will automatically retry per server's 'retry: 1000' setting
         setSyncStatus('connecting');
+        // If native EventSource closed, schedule explicit reconnect fallback
+        if (es?.readyState === EventSource.CLOSED) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (!isCleanedUp) connectSSE();
+          }, 2000);
+        }
+      };
+
+      const handleEventData = (evType: string, event: MessageEvent) => {
+        if (isCleanedUp) return;
+        setLastSyncTime(new Date());
+        setSyncStatus('connected');
+
+        if (event.lastEventId) {
+          const parsedId = parseInt(event.lastEventId, 10);
+          if (!isNaN(parsedId) && parsedId > 0) {
+            updateLastEventId(parsedId, userId);
+          }
+        }
+
+        try {
+          const data = event.data ? JSON.parse(event.data) : {};
+          if (data?._eventId) {
+            updateLastEventId(data._eventId, userId);
+          }
+          const origin = data?._originDeviceId || data?.clientDeviceId;
+          if (onEventRef.current) {
+            onEventRef.current(evType, data, origin);
+          }
+        } catch (err) {
+          console.warn(`Error parsing SSE data for ${evType}:`, err);
+        }
       };
 
       // Register listener for each distinct academic/timer sync event
       for (const evType of SYNC_EVENT_TYPES) {
         es.addEventListener(evType, (event: MessageEvent) => {
-          if (isCleanedUp) return;
-          setLastSyncTime(new Date());
-          setSyncStatus('connected');
-
-          try {
-            const data = event.data ? JSON.parse(event.data) : {};
-            if (onEventRef.current) {
-              onEventRef.current(evType, data);
-            }
-          } catch (err) {
-            console.warn(`Error parsing SSE data for ${evType}:`, err);
-          }
+          handleEventData(evType, event);
         });
       }
 
       // Fallback message listener
       es.onmessage = (event: MessageEvent) => {
         if (isCleanedUp) return;
-        setLastSyncTime(new Date());
-        setSyncStatus('connected');
         try {
           const data = event.data ? JSON.parse(event.data) : {};
-          if (data?.eventType && onEventRef.current) {
-            onEventRef.current(data.eventType, data.payload);
-          }
+          const evType = data?.eventType || 'message';
+          handleEventData(evType, event);
         } catch {}
       };
     };
@@ -194,6 +246,10 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
       window.removeEventListener('online', handleVisibilityOrOnline);
 
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       if (es) {
         try {
           es.close();
@@ -208,7 +264,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       }
       setSyncStatus('disconnected');
     };
-  }, [userId]);
+  }, [userId, updateLastEventId]);
 
   return {
     syncStatus,

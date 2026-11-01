@@ -19,6 +19,7 @@ async function requireUser() {
 export async function createTaskAction(raw: unknown) {
   const user = await requireUser();
   const parsed = TaskSchema.parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const task = await createTask(user.uid, {
     ...parsed,
     dueDate: new Date(parsed.dueDate),
@@ -29,6 +30,7 @@ export async function createTaskAction(raw: unknown) {
       userId: user.uid,
       eventType: 'task:create',
       payload: { task },
+      clientDeviceId,
     });
   }
 
@@ -39,6 +41,7 @@ export async function createTaskAction(raw: unknown) {
 export async function updateTaskAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = TaskSchema.partial().parse(raw);
+  const clientDeviceId = (raw as any)?.clientDeviceId;
   const task = await updateTask(user.uid, id, {
     ...parsed,
     dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,
@@ -49,6 +52,7 @@ export async function updateTaskAction(id: string, raw: unknown) {
       userId: user.uid,
       eventType: 'task:update',
       payload: { task },
+      clientDeviceId,
     });
   }
 
@@ -56,7 +60,7 @@ export async function updateTaskAction(id: string, raw: unknown) {
   return { success: true, task };
 }
 
-export async function deleteTaskAction(id: string) {
+export async function deleteTaskAction(id: string, clientDeviceId?: string) {
   const user = await requireUser();
   await deleteTask(user.uid, id);
 
@@ -64,6 +68,7 @@ export async function deleteTaskAction(id: string) {
     userId: user.uid,
     eventType: 'task:delete',
     payload: { taskId: id },
+    clientDeviceId,
   });
 
   revalidatePath('/');

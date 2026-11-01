@@ -358,88 +358,87 @@ export async function ensureCurriculumSeedData(): Promise<void> {
 
     const existingCodeMap = new Map(existing.map((s) => [s.code, s.id]));
 
-    await db.transaction(async (tx) => {
-      let subjOrder = 1;
-      for (const subj of HSC_SYLLABUS_SEED) {
-        let subjectId = existingCodeMap.get(subj.code);
+    const tx = db;
+    let subjOrder = 1;
+    for (const subj of HSC_SYLLABUS_SEED) {
+      let subjectId = existingCodeMap.get(subj.code);
 
-        if (!subjectId) {
-          const [inserted] = await tx
-            .insert(curriculumSubjects)
+      if (!subjectId) {
+        const [inserted] = await tx
+          .insert(curriculumSubjects)
+          .values({
+            name: subj.name,
+            code: subj.code,
+            color: subj.color,
+            icon: subj.icon,
+            displayOrder: subjOrder,
+            userId: null,
+          })
+          .returning({ id: curriculumSubjects.id });
+        subjectId = inserted.id;
+      }
+
+      subjOrder++;
+
+      let paperOrder = 1;
+      for (const paper of subj.papers) {
+        // Check if paper exists
+        const existingPapers = await tx
+          .select({ id: curriculumPapers.id })
+          .from(curriculumPapers)
+          .where(
+            and(
+              eq(curriculumPapers.subjectId, subjectId),
+              eq(curriculumPapers.paperCode, paper.paperCode),
+              isNull(curriculumPapers.userId)
+            )
+          );
+
+        let paperId = existingPapers[0]?.id;
+        if (!paperId) {
+          const [insertedPaper] = await tx
+            .insert(curriculumPapers)
             .values({
-              name: subj.name,
-              code: subj.code,
-              color: subj.color,
-              icon: subj.icon,
-              displayOrder: subjOrder,
+              subjectId,
+              title: paper.title,
+              paperCode: paper.paperCode,
+              displayOrder: paperOrder,
               userId: null,
             })
-            .returning({ id: curriculumSubjects.id });
-          subjectId = inserted.id;
+            .returning({ id: curriculumPapers.id });
+          paperId = insertedPaper.id;
         }
 
-        subjOrder++;
+        paperOrder++;
 
-        let paperOrder = 1;
-        for (const paper of subj.papers) {
-          // Check if paper exists
-          const existingPapers = await tx
-            .select({ id: curriculumPapers.id })
-            .from(curriculumPapers)
-            .where(
-              and(
-                eq(curriculumPapers.subjectId, subjectId),
-                eq(curriculumPapers.paperCode, paper.paperCode),
-                isNull(curriculumPapers.userId)
-              )
-            );
+        // Check existing topics under this paper
+        const existingTopics = await tx
+          .select({ id: curriculumTopics.id, title: curriculumTopics.title })
+          .from(curriculumTopics)
+          .where(
+            and(
+              eq(curriculumTopics.paperId, paperId),
+              isNull(curriculumTopics.userId)
+            )
+          );
 
-          let paperId = existingPapers[0]?.id;
-          if (!paperId) {
-            const [insertedPaper] = await tx
-              .insert(curriculumPapers)
-              .values({
-                subjectId,
-                title: paper.title,
-                paperCode: paper.paperCode,
-                displayOrder: paperOrder,
-                userId: null,
-              })
-              .returning({ id: curriculumPapers.id });
-            paperId = insertedPaper.id;
-          }
+        const existingTitleSet = new Set(existingTopics.map((t) => t.title));
+        const topicsToInsert = paper.topics
+          .filter((t) => !existingTitleSet.has(t.title))
+          .map((t, idx) => ({
+            paperId,
+            subjectId,
+            title: t.title,
+            chapterNumber: t.chapterNumber,
+            displayOrder: idx + 1,
+            userId: null,
+          }));
 
-          paperOrder++;
-
-          // Check existing topics under this paper
-          const existingTopics = await tx
-            .select({ id: curriculumTopics.id, title: curriculumTopics.title })
-            .from(curriculumTopics)
-            .where(
-              and(
-                eq(curriculumTopics.paperId, paperId),
-                isNull(curriculumTopics.userId)
-              )
-            );
-
-          const existingTitleSet = new Set(existingTopics.map((t) => t.title));
-          const topicsToInsert = paper.topics
-            .filter((t) => !existingTitleSet.has(t.title))
-            .map((t, idx) => ({
-              paperId,
-              subjectId,
-              title: t.title,
-              chapterNumber: t.chapterNumber,
-              displayOrder: idx + 1,
-              userId: null,
-            }));
-
-          if (topicsToInsert.length > 0) {
-            await tx.insert(curriculumTopics).values(topicsToInsert);
-          }
+        if (topicsToInsert.length > 0) {
+          await tx.insert(curriculumTopics).values(topicsToInsert);
         }
       }
-    });
+    }
 
     isSeedEnsured = true;
     console.log('✓ HSC Curriculum Syllabus Seed checked and ready.');
