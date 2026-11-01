@@ -28,6 +28,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   variant = 'sidebar',
   className = '',
 }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const {
     canTriggerNativePrompt,
     isInstalled,
@@ -36,6 +41,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     triggerInstall,
     openInstallModal,
   } = usePWAInstall();
+
+  // Avoid hydration mismatch by waiting until client mount
+  if (!mounted) {
+    return null;
+  }
 
   // Hide install button in sidebar/header/auth when already installed or running in standalone mode
   if ((isInstalled || isStandalone) && variant !== 'settings') {
@@ -165,9 +175,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 };
 
 export const OfflineConnectivityBanner: React.FC = () => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const { isOnline } = usePWAInstall();
 
-  if (isOnline) return null;
+  if (!mounted || isOnline) return null;
 
   return (
     <div className="fixed bottom-20 left-3 right-3 sm:bottom-4 sm:left-4 sm:right-auto z-40 max-w-md flex items-center gap-2.5 rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg border border-amber-400/40">

@@ -3,7 +3,7 @@ import { WorkspaceProvider } from "@/context/WorkspaceContext";
 import { TimerProvider } from "@/context/TimerContext";
 import { getCurrentUser } from "@/lib/auth";
 
-export const instant = false;
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const initialUser = await getCurrentUser();
