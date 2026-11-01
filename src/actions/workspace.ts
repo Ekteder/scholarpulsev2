@@ -34,14 +34,26 @@ export async function completeOnboardingAction(raw: unknown) {
   const user = await requireUser();
   const parsed = OnboardingSchema.parse(raw);
   const colors = ['#2563EB', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4'];
-  const initialSubjects = (parsed.initialSubjects || []).map((s, idx) => ({
-    name: s,
-    description: '',
-    color: colors[idx % colors.length],
-    icon: 'BookOpen',
-    dailyTargetMinutes: 60,
-    weeklyTargetMinutes: 300,
-  }));
+  const initialSubjects = (parsed.initialSubjects || []).map((s, idx) => {
+    if (typeof s === 'string') {
+      return {
+        name: s,
+        description: '',
+        color: colors[idx % colors.length],
+        icon: 'BookOpen',
+        dailyTargetMinutes: 60,
+        weeklyTargetMinutes: 300,
+      };
+    }
+    return {
+      name: s.name,
+      description: s.description || '',
+      color: s.color || colors[idx % colors.length],
+      icon: s.icon || 'BookOpen',
+      dailyTargetMinutes: s.dailyTargetMinutes ?? 60,
+      weeklyTargetMinutes: s.weeklyTargetMinutes ?? 300,
+    };
+  });
   await completeUserOnboarding(user.uid, user.email, {
     ...parsed,
     initialSubjects,

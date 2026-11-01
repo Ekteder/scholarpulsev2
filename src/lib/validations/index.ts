@@ -1,12 +1,24 @@
 import { z } from 'zod';
 
+export const InitialSubjectItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string().min(1),
+    description: z.string().optional().default(''),
+    color: z.string().default('#2563EB'),
+    icon: z.string().default('BookOpen'),
+    dailyTargetMinutes: z.number().int().min(0).default(60),
+    weeklyTargetMinutes: z.number().int().min(0).default(300),
+  }),
+]);
+
 export const OnboardingSchema = z.object({
   fullName: z.string().min(1, 'Full name is required').max(100),
   avatarUrl: z.string().optional().default(''),
   dailyStudyTargetMinutes: z.number().int().min(15).max(1440).default(360),
   preferredStudyTime: z.enum(['morning', 'afternoon', 'evening', 'night']).default('evening'),
   timezone: z.string().min(1).default('Asia/Dhaka'),
-  initialSubjects: z.array(z.string()).default([]),
+  initialSubjects: z.array(InitialSubjectItemSchema).default([]),
 });
 
 export const ProfileUpdateSchema = z.object({
