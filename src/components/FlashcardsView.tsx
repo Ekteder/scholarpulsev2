@@ -38,6 +38,8 @@ export function FlashcardsView() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewIndex, setReviewIndex] = useState(0);
   const [cardFlipped, setCardFlipped] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState<FlashcardItem[]>([]);
+  const [submittingRate, setSubmittingRate] = useState(false);
 
   const timezone = data?.profile?.timezone || 'Asia/Dhaka';
   const todayYmd = useMemo(() => toDateStringInTz(new Date(), timezone), [timezone]);
@@ -60,11 +62,15 @@ export function FlashcardsView() {
     return pool;
   }, [allCards, selectedSubjectFilter, todayYmd]);
 
-  const activeCard = isReviewing && dueCards.length > 0 ? dueCards[reviewIndex] : null;
+  // Active card comes from stable session snapshot to avoid skipping cards when dueCards shrinks
+  const activeCard =
+    isReviewing && reviewQueue.length > 0 && reviewIndex < reviewQueue.length
+      ? reviewQueue[reviewIndex]
+      : null;
 
   // Keyboard shortcut listener during active study
   React.useEffect(() => {
-    if (!isReviewing || !activeCard) return;
+    if (!isReviewing || !activeCard || submittingRate) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -82,28 +88,49 @@ export function FlashcardsView() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isReviewing, activeCard, cardFlipped]);
+  }, [isReviewing, activeCard, cardFlipped, submittingRate]);
 
   const handleStartReview = () => {
     if (dueCards.length === 0) return;
+    setReviewQueue([...dueCards]);
     setReviewIndex(0);
     setCardFlipped(false);
     setIsReviewing(true);
   };
 
+  const handleExitReview = () => {
+    setIsReviewing(false);
+    setReviewQueue([]);
+    setCardFlipped(false);
+    setReviewIndex(0);
+  };
+
   const handleRateCard = async (grade: 1 | 2 | 3 | 4) => {
-    if (!activeCard) return;
+    if (!activeCard || submittingRate) return;
 
-    await reviewFlashcard(activeCard.id, grade);
+    setSubmittingRate(true);
+    try {
+      await reviewFlashcard(activeCard.id, grade);
 
-    if (reviewIndex + 1 < dueCards.length) {
-      setCardFlipped(false);
-      setReviewIndex((prev) => prev + 1);
-    } else {
-      // Completed the session!
-      triggerCelebrationConfetti();
-      setIsReviewing(false);
-      setCardFlipped(false);
+      // In SM-2 / Anki, if grade is 1 (Again), append to end of queue for this study session
+      let nextQueue = reviewQueue;
+      if (grade === 1) {
+        nextQueue = [...reviewQueue, activeCard];
+        setReviewQueue(nextQueue);
+      }
+
+      if (reviewIndex + 1 < nextQueue.length) {
+        setCardFlipped(false);
+        setReviewIndex((prev) => prev + 1);
+      } else {
+        // Completed the session!
+        triggerCelebrationConfetti();
+        setIsReviewing(false);
+        setCardFlipped(false);
+        setReviewQueue([]);
+      }
+    } finally {
+      setSubmittingRate(false);
     }
   };
 
@@ -189,7 +216,7 @@ export function FlashcardsView() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                Card {reviewIndex + 1} of {dueCards.length}
+                Card {reviewIndex + 1} of {reviewQueue.length}
               </span>
               <span className="text-xs font-medium text-slate-500">
                 {subjects.find((s) => s.id === activeCard.subjectId)?.name || 'Subject'}
@@ -197,7 +224,7 @@ export function FlashcardsView() {
             </div>
 
             <button
-              onClick={() => setIsReviewing(false)}
+              onClick={handleExitReview}
               className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1 px-2 py-1"
             >
               <X className="w-4 h-4" />
@@ -268,28 +295,32 @@ export function FlashcardsView() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <button
                   onClick={() => handleRateCard(1)}
-                  className="p-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 flex flex-col items-center gap-1 transition-all"
+                  disabled={submittingRate}
+                  className="p-3 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span className="font-bold text-sm">1. Again</span>
-                  <span className="text-[10px] opacity-75">Review in &lt;1 day</span>
+                  <span className="text-[10px] opacity-75">Review again today</span>
                 </button>
                 <button
                   onClick={() => handleRateCard(2)}
-                  className="p-3 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 flex flex-col items-center gap-1 transition-all"
+                  disabled={submittingRate}
+                  className="p-3 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span className="font-bold text-sm">2. Hard</span>
                   <span className="text-[10px] opacity-75">Review in 1-2 days</span>
                 </button>
                 <button
                   onClick={() => handleRateCard(3)}
-                  className="p-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 flex flex-col items-center gap-1 transition-all"
+                  disabled={submittingRate}
+                  className="p-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span className="font-bold text-sm">3. Good</span>
                   <span className="text-[10px] opacity-75">Review in 3-6 days</span>
                 </button>
                 <button
                   onClick={() => handleRateCard(4)}
-                  className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 flex flex-col items-center gap-1 transition-all"
+                  disabled={submittingRate}
+                  className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span className="font-bold text-sm">4. Easy</span>
                   <span className="text-[10px] opacity-75">Review in 7-14+ days</span>

@@ -116,14 +116,16 @@ export function RevisionTrackerView() {
 
   const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeDetailItem || !resTitle.trim() || !resUrl.trim()) return;
+    if (!activeDetailItem || !resTitle.trim()) return;
+    const cleanUrl = resUrl.trim() || (resType === 'book_ref' ? '#' : '');
+    if (!cleanUrl) return;
     setSavingRes(true);
     try {
       await createResource({
         subjectId: activeDetailItem.subject.id,
         topicId: activeDetailItem.topic.id,
         title: resTitle.trim(),
-        url: resUrl.trim(),
+        url: cleanUrl,
         resourceType: resType,
         pageReference: resPageRef.trim(),
         notes: resNotes.trim(),
@@ -1608,15 +1610,17 @@ export function RevisionTrackerView() {
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <a
-                              href={res.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 transition-colors"
-                              title="Open Resource Link"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
+                            {res.url && res.url !== '#' && (
+                              <a
+                                href={res.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 transition-colors"
+                                title="Open Resource Link"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
                             <button
                               type="button"
                               onClick={() => deleteResource(res.id)}
@@ -1672,14 +1676,14 @@ export function RevisionTrackerView() {
 
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                      URL Link
+                      URL Link {resType === 'book_ref' ? '(Optional)' : ''}
                     </label>
                     <input
-                      type="url"
+                      type={resType === 'book_ref' ? 'text' : 'url'}
                       value={resUrl}
                       onChange={(e) => setResUrl(e.target.value)}
-                      placeholder="https://..."
-                      required
+                      placeholder={resType === 'book_ref' ? 'Optional web link, or leave empty' : 'https://...'}
+                      required={resType !== 'book_ref'}
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-mono"
                     />
                   </div>
