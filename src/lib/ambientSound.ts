@@ -14,6 +14,19 @@ export interface AmbientState {
   volumes: Record<AmbientSoundTrack, number>; // 0 to 1
 }
 
+export const DEFAULT_AMBIENT_STATE: AmbientState = {
+  isPlaying: false,
+  masterVolume: 0.6,
+  volumes: {
+    rain: 0.5,
+    white: 0.0,
+    pink: 0.0,
+    brown: 0.4,
+    campfire: 0.0,
+    binaural: 0.3,
+  },
+};
+
 type Listener = (state: AmbientState) => void;
 
 class AmbientSoundEngine {
@@ -23,16 +36,8 @@ class AmbientSoundEngine {
   private trackSources: Partial<Record<AmbientSoundTrack, AudioNode[]>> = {};
 
   private state: AmbientState = {
-    isPlaying: false,
-    masterVolume: 0.6,
-    volumes: {
-      rain: 0.5,
-      white: 0.0,
-      pink: 0.0,
-      brown: 0.4,
-      campfire: 0.0,
-      binaural: 0.3,
-    },
+    ...DEFAULT_AMBIENT_STATE,
+    volumes: { ...DEFAULT_AMBIENT_STATE.volumes },
   };
 
   private listeners = new Set<Listener>();

@@ -56,12 +56,11 @@ export function StudyHistoryView() {
   const [editRating, setEditRating] = useState(4);
   const [editError, setEditError] = useState<string | null>(null);
 
-  if (!data) return null;
-
-  const subjectMap = new Map(data.subjects.map((s) => [s.id, s]));
+  const subjectMap = useMemo(() => new Map((data?.subjects || []).map((s) => [s.id, s])), [data?.subjects]);
 
   // Filtered and sorted sessions for Table View
   const filteredSessions = useMemo(() => {
+    if (!data?.studySessions) return [];
     return data.studySessions
       .filter((s) => {
         if (
@@ -88,7 +87,7 @@ export function StudyHistoryView() {
         return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
       });
   }, [
-    data.studySessions,
+    data?.studySessions,
     searchQuery,
     subjectFilter,
     startDateFilter,
@@ -106,6 +105,7 @@ export function StudyHistoryView() {
   // Sessions indexed by YYYY-MM-DD for Calendar View
   const sessionsByYmd = useMemo(() => {
     const map = new Map<string, StudySession[]>();
+    if (!data?.studySessions) return map;
     for (const s of data.studySessions) {
       const ymd = toDateStringInTz(s.startTime, timezone);
       const arr = map.get(ymd) || [];
@@ -113,7 +113,7 @@ export function StudyHistoryView() {
       map.set(ymd, arr);
     }
     return map;
-  }, [data.studySessions, timezone]);
+  }, [data?.studySessions, timezone]);
 
   // Export CSV
   const handleExportCsv = () => {
@@ -230,6 +230,8 @@ export function StudyHistoryView() {
       setEditError(err.message || 'Failed to update session.');
     }
   };
+
+  if (!data) return null;
 
   return (
     <div className="space-y-6">

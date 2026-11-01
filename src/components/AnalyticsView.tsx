@@ -12,7 +12,6 @@ import {
   toTimeStringInTz,
 } from '@/lib/timezone';
 import { HeatmapWidget } from './HeatmapWidget';
-import { generatePdfDossier } from '@/lib/pdfDossier';
 import {
   REVISION_CATEGORIES,
   RevisionWorkspacePayload,
@@ -38,11 +37,9 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BookOpenCheck,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
-  FileDown,
   Moon,
   Sparkles,
   Sun,
@@ -90,13 +87,16 @@ export function AnalyticsView() {
   // Weekly Report week offset (0 = current 7-day week ending today, -1 = previous week, etc.)
   const [reportWeekOffset, setReportWeekOffset] = useState(0);
 
-  if (!data) return null;
-
-  const { profile, subjects, studySessions, tasks, schedules, goals } = data;
+  const profile = data?.profile;
+  const subjects = useMemo(() => data?.subjects || [], [data?.subjects]);
+  const studySessions = useMemo(() => data?.studySessions || [], [data?.studySessions]);
+  const tasks = useMemo(() => data?.tasks || [], [data?.tasks]);
+  const schedules = useMemo(() => data?.schedules || [], [data?.schedules]);
+  const goals = useMemo(() => data?.goals || [], [data?.goals]);
   const dailyTargetHours = Number(
-    ((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(2)
+    (((profile?.dailyStudyTargetMinutes || 360)) / 60).toFixed(2)
   );
-  const subjectMap = new Map(subjects.map((s) => [s.id, s]));
+  const subjectMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
   // Compute startYmd and endYmd for the selected time filter
   const { startYmd, endYmd, dayCount } = useMemo(() => {
@@ -516,7 +516,7 @@ export function AnalyticsView() {
       return ymd >= weekStart && ymd <= weekEnd;
     });
 
-    const dailyGoalSec = (profile.dailyStudyTargetMinutes || 360) * 60;
+    const dailyGoalSec = ((profile?.dailyStudyTargetMinutes || 360)) * 60;
     let daysMetGoal = 0;
     let activeDaysInWeek = 0;
     for (let i = 0; i < 7; i++) {
@@ -568,7 +568,7 @@ export function AnalyticsView() {
     studySessions,
     timezone,
     tasks,
-    profile.dailyStudyTargetMinutes,
+    profile?.dailyStudyTargetMinutes,
     subjects,
   ]);
 
@@ -603,6 +603,8 @@ export function AnalyticsView() {
     URL.revokeObjectURL(url);
   };
 
+  if (!data) return null;
+
   return (
     <div className="space-y-6">
       {/* Top Header & Sub-View Navigation */}
@@ -618,15 +620,6 @@ export function AnalyticsView() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => generatePdfDossier(data)}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-            >
-              <FileDown className="w-3.5 h-3.5" />
-              <span>Export Dossier (PDF)</span>
-            </button>
-
             <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
               {[
                 { id: 'overview', label: 'Charts & Trends' },
@@ -1375,7 +1368,7 @@ export function AnalyticsView() {
           sessions={studySessions}
           subjects={subjects}
           timezone={timezone}
-          dailyTargetMinutes={profile.dailyStudyTargetMinutes || 360}
+          dailyTargetMinutes={data.profile.dailyStudyTargetMinutes || 360}
         />
       )}
 

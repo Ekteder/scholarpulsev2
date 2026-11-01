@@ -130,7 +130,7 @@ export function MathCheatSheetPopover() {
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Type formulas directly inside your study notes, task details, and flashcards:
+              Type formulas directly inside your study notes and task details:
               <br />
               Use <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-blue-600">$...$</code> for inline formulas, and <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-blue-600">$$...$$</code> for centered block equations.
             </p>

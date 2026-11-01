@@ -15,7 +15,6 @@ import {
   CurriculumResourceItem,
   CurriculumSubject,
   CurriculumTopic,
-  FlashcardItem,
   GoalItem,
   NavigationTab,
   NotificationPreferences,
@@ -84,12 +83,6 @@ import {
   createCurriculumResourceAction,
   deleteCurriculumResourceAction,
 } from '../actions/revision';
-import {
-  createFlashcardAction,
-  updateFlashcardAction,
-  deleteFlashcardAction,
-  reviewFlashcardAction,
-} from '../actions/flashcards';
 import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { useTheme } from 'next-themes';
 import { useRealtimeSync, SyncStatus, getClientDeviceId } from '../hooks/useRealtimeSync';
@@ -195,12 +188,6 @@ export interface WorkspaceContextValue {
     customTitle?: string;
     customOrder?: number;
   }) => Promise<UserCurriculumCustomization>;
-
-  // Spaced Repetition Flashcards
-  createFlashcard: (payload: any) => Promise<FlashcardItem>;
-  updateFlashcard: (id: string, payload: any) => Promise<FlashcardItem>;
-  deleteFlashcard: (id: string) => Promise<void>;
-  reviewFlashcard: (id: string, grade: 1 | 2 | 3 | 4) => Promise<FlashcardItem>;
 
   // Chapter Resources
   createResource: (payload: any) => Promise<CurriculumResourceItem>;
@@ -553,51 +540,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               return {
                 ...prev,
                 goals: prev.goals.filter((g) => g.id !== goalId),
-              };
-            });
-          }
-          break;
-        }
-
-        case 'flashcard:create': {
-          const flashcard = payload?.flashcard;
-          if (flashcard) {
-            setData((prev) => {
-              if (!prev) return null;
-              if ((prev.flashcards || []).some((f) => f.id === flashcard.id)) return prev;
-              return {
-                ...prev,
-                flashcards: [...(prev.flashcards || []), flashcard],
-              };
-            });
-          }
-          break;
-        }
-
-        case 'flashcard:update': {
-          const flashcard = payload?.flashcard;
-          if (flashcard) {
-            setData((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                flashcards: (prev.flashcards || []).map((f) =>
-                  f.id === flashcard.id ? flashcard : f
-                ),
-              };
-            });
-          }
-          break;
-        }
-
-        case 'flashcard:delete': {
-          const flashcardId = payload?.flashcardId;
-          if (flashcardId) {
-            setData((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                flashcards: (prev.flashcards || []).filter((f) => f.id !== flashcardId),
               };
             });
           }
@@ -1302,54 +1244,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return cust;
   }, [broadcastLocal]);
 
-  // Spaced Repetition Flashcards
-  const createFlashcard = useCallback(async (payload: any) => {
-    const res = await createFlashcardAction({ ...payload, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.flashcard) throw new Error('Failed to create flashcard');
-    const card = res.flashcard as unknown as FlashcardItem;
-    setData((prev) => prev ? { ...prev, flashcards: [...(prev.flashcards || []), card] } : null);
-    broadcastLocal('flashcard:create', { flashcard: card });
-    addToast({ title: 'Flashcard Created', description: 'Added to your spaced repetition deck.', variant: 'success' });
-    return card;
-  }, [addToast, broadcastLocal]);
-
-  const updateFlashcard = useCallback(async (id: string, payload: any) => {
-    const res = await updateFlashcardAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.flashcard) throw new Error('Failed to update flashcard');
-    const card = res.flashcard as unknown as FlashcardItem;
-    setData((prev) => prev ? {
-      ...prev,
-      flashcards: (prev.flashcards || []).map((f) => f.id === id ? card : f),
-    } : null);
-    broadcastLocal('flashcard:update', { flashcard: card });
-    return card;
-  }, [broadcastLocal]);
-
-  const deleteFlashcard = useCallback(async (id: string) => {
-    await deleteFlashcardAction(id, getClientDeviceId());
-    setData((prev) => prev ? {
-      ...prev,
-      flashcards: (prev.flashcards || []).filter((f) => f.id !== id),
-    } : null);
-    broadcastLocal('flashcard:delete', { flashcardId: id });
-    addToast({ title: 'Flashcard Removed', description: 'Deleted from your deck.', variant: 'default' });
-  }, [addToast, broadcastLocal]);
-
-  const reviewFlashcard = useCallback(async (id: string, grade: 1 | 2 | 3 | 4) => {
-    const res = await reviewFlashcardAction({ id, grade, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.flashcard) throw new Error('Failed to review flashcard');
-    const card = res.flashcard as unknown as FlashcardItem;
-    setData((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        flashcards: (prev.flashcards || []).map((f) => (f.id === id ? card : f)),
-      };
-    });
-    broadcastLocal('flashcard:update', { flashcard: card });
-    return card;
-  }, [broadcastLocal]);
-
   // Chapter Resources
   const createResource = useCallback(async (payload: any) => {
     const res = await createCurriculumResourceAction({ ...payload, clientDeviceId: getClientDeviceId() });
@@ -1443,10 +1337,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     addCustomCurriculumTopicItem,
     addCustomCurriculumSubjectItem,
     updateCurriculumCustomizationItem,
-    createFlashcard,
-    updateFlashcard,
-    deleteFlashcard,
-    reviewFlashcard,
     createResource,
     deleteResource,
     syncStatus,
@@ -1499,10 +1389,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     addCustomCurriculumTopicItem,
     addCustomCurriculumSubjectItem,
     updateCurriculumCustomizationItem,
-    createFlashcard,
-    updateFlashcard,
-    deleteFlashcard,
-    reviewFlashcard,
     createResource,
     deleteResource,
     updateExamTarget,

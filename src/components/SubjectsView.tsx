@@ -79,9 +79,7 @@ export function SubjectsView() {
     'medium'
   );
 
-  if (!data) return null;
-
-  const timezone = data.profile?.timezone || 'Asia/Dhaka';
+  const timezone = data?.profile?.timezone || 'Asia/Dhaka';
   const todayYmd = toDateStringInTz(new Date(), timezone);
   const weekAgoYmd = addDaysToYmd(todayYmd, -6);
   const monthAgoYmd = addDaysToYmd(todayYmd, -29);
@@ -100,6 +98,8 @@ export function SubjectsView() {
         completedTaskCount: number;
       }
     >();
+
+    if (!data?.subjects) return map;
 
     for (const sub of data.subjects) {
       map.set(sub.id, {
@@ -136,7 +136,7 @@ export function SubjectsView() {
     }
 
     return map;
-  }, [data.subjects, data.studySessions, data.tasks, timezone, todayYmd, weekAgoYmd, monthAgoYmd]);
+  }, [data?.subjects, data?.studySessions, data?.tasks, timezone, todayYmd, weekAgoYmd, monthAgoYmd]);
 
   const openCreateModal = () => {
     setEditingSubject(null);
@@ -186,6 +186,8 @@ export function SubjectsView() {
       setSubmitting(false);
     }
   };
+
+  if (!data) return null;
 
   // Selected Subject Detail View
   const selectedSubject = data.subjects.find((s) => s.id === selectedSubjectId);

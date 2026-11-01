@@ -45,48 +45,58 @@ export function SettingsView() {
 
   const { theme, setTheme } = useTheme();
 
-  if (!data) return null;
-
-  const { profile, notificationPreferences } = data;
+  const profile = data?.profile;
   const { isInstalled, isStandalone, swRegistered, canTriggerNativePrompt } =
     usePWAInstall();
 
-  const [fullName, setFullName] = useState(profile.fullName);
-  const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl || '');
+  const [fullName, setFullName] = useState(profile?.fullName || '');
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatarUrl || '');
   const [dailyTargetHours, setDailyTargetHours] = useState(
-    Number(((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(1))
+    Number(((profile?.dailyStudyTargetMinutes || 360) / 60).toFixed(1))
   );
   const [preferredStudyTime, setPreferredStudyTime] = useState(
-    profile.preferredStudyTime || 'evening'
+    profile?.preferredStudyTime || 'evening'
   );
-  const [timezone, setTimezone] = useState(profile.timezone || 'Asia/Dhaka');
+  const [timezone, setTimezone] = useState(profile?.timezone || 'Asia/Dhaka');
   const [targetExamName, setTargetExamName] = useState(
-    profile.targetExamName || 'HSC 2026'
+    profile?.targetExamName || 'HSC 2026'
   );
   const [targetExamDate, setTargetExamDate] = useState(
-    profile.targetExamDate || '2026-06-15'
+    profile?.targetExamDate || '2026-06-15'
   );
-  const [themePref, setThemePref] = useState(profile.themePreference || theme || 'light');
+  const [themePref, setThemePref] = useState(profile?.themePreference || theme || 'light');
+  const [focusMins, setFocusMins] = useState(profile?.pomodoroFocusMinutes || 25);
+  const [shortBreakMins, setShortBreakMins] = useState(
+    profile?.pomodoroShortBreakMinutes || 5
+  );
+  const [longBreakMins, setLongBreakMins] = useState(
+    profile?.pomodoroLongBreakMinutes || 15
+  );
+  const [longBreakInterval, setLongBreakInterval] = useState(
+    profile?.pomodoroLongBreakInterval || 4
+  );
 
-  // Keep local theme selection in sync
+  // Keep local theme and profile selection in sync
   useEffect(() => {
-    if (profile.themePreference) {
-      setThemePref(profile.themePreference);
+    if (profile) {
+      setFullName(profile.fullName);
+      setAvatarUrl(profile.avatarUrl || '');
+      setDailyTargetHours(Number(((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(1)));
+      setPreferredStudyTime(profile.preferredStudyTime || 'evening');
+      setTimezone(profile.timezone || 'Asia/Dhaka');
+      setTargetExamName(profile.targetExamName || 'HSC 2026');
+      setTargetExamDate(profile.targetExamDate || '2026-06-15');
+      setFocusMins(profile.pomodoroFocusMinutes || 25);
+      setShortBreakMins(profile.pomodoroShortBreakMinutes || 5);
+      setLongBreakMins(profile.pomodoroLongBreakMinutes || 15);
+      setLongBreakInterval(profile.pomodoroLongBreakInterval || 4);
+      if (profile.themePreference) {
+        setThemePref(profile.themePreference);
+      }
     } else if (theme) {
       setThemePref(theme);
     }
-  }, [profile.themePreference, theme]);
-
-  const [focusMins, setFocusMins] = useState(profile.pomodoroFocusMinutes || 25);
-  const [shortBreakMins, setShortBreakMins] = useState(
-    profile.pomodoroShortBreakMinutes || 5
-  );
-  const [longBreakMins, setLongBreakMins] = useState(
-    profile.pomodoroLongBreakMinutes || 15
-  );
-  const [longBreakInterval, setLongBreakInterval] = useState(
-    profile.pomodoroLongBreakInterval || 4
-  );
+  }, [profile, theme]);
 
   // Backup & Restore state
   const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge');
@@ -142,6 +152,7 @@ export function SettingsView() {
   };
 
   const handleExportFullJsonBackup = () => {
+    if (!data) return;
     const todayYmd = toDateStringInTz(new Date(), timezone);
     const backupBundle = {
       schemaVersion: '1.0.0',
@@ -210,6 +221,8 @@ export function SettingsView() {
     }
   };
 
+  if (!data) return null;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* 1. Profile & Study Preferences */}
@@ -250,7 +263,7 @@ export function SettingsView() {
             <input
               type="email"
               disabled
-              value={user?.email || profile.email}
+              value={user?.email || data.profile.email}
               className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-not-allowed"
             />
           </div>
@@ -527,7 +540,7 @@ export function SettingsView() {
             </div>
             <input
               type="checkbox"
-              checked={notificationPreferences.soundChimesEnabled}
+              checked={data.notificationPreferences.soundChimesEnabled}
               onChange={(e) =>
                 updateNotificationPrefs({ soundChimesEnabled: e.target.checked })
               }
@@ -546,7 +559,7 @@ export function SettingsView() {
             </div>
             <input
               type="checkbox"
-              checked={notificationPreferences.browserNotificationsEnabled}
+              checked={data.notificationPreferences.browserNotificationsEnabled}
               onChange={(e) => handleToggleBrowserNotifications(e.target.checked)}
               className="rounded accent-blue-600 w-4 h-4 cursor-pointer"
             />
@@ -563,7 +576,7 @@ export function SettingsView() {
             </div>
             <input
               type="checkbox"
-              checked={notificationPreferences.goalCompletionAlert}
+              checked={data.notificationPreferences.goalCompletionAlert}
               onChange={(e) =>
                 updateNotificationPrefs({
                   goalCompletionAlert: e.target.checked,

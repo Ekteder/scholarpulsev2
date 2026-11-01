@@ -5,6 +5,7 @@ import {
   ambientSound,
   AmbientSoundTrack,
   AmbientState,
+  DEFAULT_AMBIENT_STATE,
 } from '@/lib/ambientSound';
 import {
   Volume2,
@@ -76,16 +77,18 @@ interface AmbientNoiseMixerProps {
 }
 
 export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
-  const [state, setState] = useState<AmbientState | null>(null);
+  const [state, setState] = useState<AmbientState>(() =>
+    ambientSound ? ambientSound.getState() : DEFAULT_AMBIENT_STATE
+  );
   const [expanded, setExpanded] = useState(!compact);
+  const [compactMixerOpen, setCompactMixerOpen] = useState(false);
 
   useEffect(() => {
     if (!ambientSound) return;
+    setState(ambientSound.getState());
     const unsub = ambientSound.subscribe((s) => setState(s));
     return unsub;
   }, []);
-
-  if (!state) return null;
 
   const handleTogglePlay = async () => {
     if (!ambientSound) return;
@@ -101,8 +104,6 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
     if (!ambientSound) return;
     ambientSound.setTrackVolume(track, val);
   };
-
-  const [compactMixerOpen, setCompactMixerOpen] = useState(false);
 
   if (compact) {
     return (

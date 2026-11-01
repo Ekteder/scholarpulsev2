@@ -56,13 +56,10 @@ export function calculateGamification(data: WorkspaceData | null) {
   // 3. Unlocked achievements: 50 XP each
   const achievementXp = (data.userAchievements || []).length * 50;
 
-  // 4. Flashcard reviews: 5 XP per completed review repetition
-  const flashcardXp = (data.flashcards || []).reduce((acc, f) => acc + (f.repetitions * 5), 0);
-
-  // 5. Explicitly stored bonus XP
+  // 4. Explicitly stored bonus XP
   const profileBonusXp = data.profile?.gamificationXp || 0;
 
-  const totalXp = sessionXp + taskXp + achievementXp + flashcardXp + profileBonusXp;
+  const totalXp = sessionXp + taskXp + achievementXp + profileBonusXp;
   const currentRank = getRankForXp(totalXp);
 
   const range = currentRank.maxXp - currentRank.minXp;

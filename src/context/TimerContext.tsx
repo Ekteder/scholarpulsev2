@@ -290,7 +290,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         clientDeviceId: getClientDeviceId(),
       };
 
-      persistActiveTimer(null);
+      await persistActiveTimer(null);
 
       if (data?.notificationPreferences?.soundChimesEnabled !== false) {
         playTimerChime('focus_end');

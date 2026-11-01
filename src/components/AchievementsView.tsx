@@ -20,18 +20,14 @@ import {
 export function AchievementsView() {
   const { data } = useWorkspace();
 
-  if (!data) return null;
+  const profile = data?.profile;
+  const studySessions = useMemo(() => data?.studySessions || [], [data?.studySessions]);
+  const tasks = useMemo(() => data?.tasks || [], [data?.tasks]);
+  const achievementsCatalog = useMemo(() => data?.achievementsCatalog || [], [data?.achievementsCatalog]);
+  const userAchievements = useMemo(() => data?.userAchievements || [], [data?.userAchievements]);
 
-  const {
-    profile,
-    studySessions,
-    tasks,
-    achievementsCatalog,
-    userAchievements,
-  } = data;
-
-  const timezone = profile.timezone || 'Asia/Dhaka';
-  const dailyTargetMinutes = profile.dailyStudyTargetMinutes || 360;
+  const timezone = profile?.timezone || 'Asia/Dhaka';
+  const dailyTargetMinutes = profile?.dailyStudyTargetMinutes || 360;
 
   const streakInfo = useMemo(
     () =>
@@ -117,6 +113,8 @@ export function AchievementsView() {
 
   const unlockedList = achievementsCatalog.filter((a) => unlockedMap.has(a.id));
   const lockedList = achievementsCatalog.filter((a) => !unlockedMap.has(a.id));
+
+  if (!data) return null;
 
   return (
     <div className="space-y-6">

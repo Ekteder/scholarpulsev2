@@ -28,9 +28,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  FileDown,
   Flame,
-  Layers,
   Plus,
   Play,
   SlidersHorizontal,
@@ -40,7 +38,6 @@ import {
 import { CreatorAttribution } from './CreatorAttribution';
 import { Button } from '@/components/ui/button';
 import { ExamCountdownAndBurndown } from './ExamCountdownAndBurndown';
-import { generatePdfDossier } from '@/lib/pdfDossier';
 
 export function DashboardView() {
   const { data, setActiveTab, setSelectedSubjectId, updateTask } = useWorkspace();
@@ -61,18 +58,10 @@ export function DashboardView() {
   const schedules = useMemo(() => data?.schedules || [], [data?.schedules]);
   const achievementsCatalog = useMemo(() => data?.achievementsCatalog || [], [data?.achievementsCatalog]);
   const userAchievements = useMemo(() => data?.userAchievements || [], [data?.userAchievements]);
-  const flashcards = useMemo(() => data?.flashcards || [], [data?.flashcards]);
 
   const timezone = profile?.timezone || 'Asia/Dhaka';
   const todayYmd = toDateStringInTz(new Date(), timezone);
   const todayDow = getDayOfWeekInTz(new Date(), timezone);
-
-  const dueFlashcards = useMemo(() => {
-    return flashcards.filter((c) => {
-      if (!c.nextReviewDate) return true;
-      return c.nextReviewDate <= todayYmd;
-    });
-  }, [flashcards, todayYmd]);
 
   const subjectMap = useMemo(() => {
     const map = new Map<string, (typeof subjects)[0]>();
@@ -288,26 +277,6 @@ export function DashboardView() {
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>Add Task</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setActiveTab('flashcards')}
-            className="px-3 sm:px-3.5 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-indigo-200 dark:border-indigo-800/60 h-auto"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Flashcards {dueFlashcards.length > 0 && `(${dueFlashcards.length} due)`}</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => data && generatePdfDossier(data)}
-            className="px-3 sm:px-3.5 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-emerald-200 dark:border-emerald-800/60 h-auto"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            <span>Study Dossier (PDF)</span>
           </Button>
 
           <Button
@@ -615,42 +584,6 @@ export function DashboardView() {
           dailyTargetMinutes={profile.dailyStudyTargetMinutes || 360}
         />
       )}
-
-      {/* Spaced Repetition Flashcard Review Queue */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-display text-sm font-bold text-slate-900 dark:text-white">
-                Spaced Repetition Flashcards
-              </h3>
-              {dueFlashcards.length > 0 ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
-                  {dueFlashcards.length} Due for Review
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                  Deck Up to Date
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              SuperMemo SM-2 algorithm · {flashcards.length} total cards · Review daily to build active recall & long-term retention
-            </p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          onClick={() => setActiveTab('flashcards')}
-          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs h-auto"
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>{dueFlashcards.length > 0 ? `Review ${dueFlashcards.length} Due Cards` : 'Open Flashcards Deck'}</span>
-        </Button>
-      </div>
 
       {/* Middle Grid: Today's Study Activity + Today's Schedule & Upcoming Tasks */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

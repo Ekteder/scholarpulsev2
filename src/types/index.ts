@@ -143,22 +143,6 @@ export interface NotificationPreferences {
   updatedAt: string | Date;
 }
 
-export interface FlashcardItem {
-  id: string;
-  userId: string;
-  subjectId: string;
-  topicId?: string | null;
-  front: string;
-  back: string;
-  repetitions: number;
-  intervalDays: number;
-  easeFactor: string;
-  nextReviewDate: string; // YYYY-MM-DD
-  lastReviewedAt?: string | Date | null;
-  createdAt: string | Date;
-  updatedAt: string | Date;
-}
-
 export interface CurriculumResourceItem {
   id: string;
   userId: string;
@@ -182,7 +166,6 @@ export interface WorkspaceData {
   tasks: TaskItem[];
   schedules: ScheduleItem[];
   goals: GoalItem[];
-  flashcards: FlashcardItem[];
   achievementsCatalog: AchievementCatalogItem[];
   userAchievements: UserAchievementItem[];
 }
@@ -191,7 +174,6 @@ export type NavigationTab =
   | 'dashboard'
   | 'tracker'
   | 'timer'
-  | 'flashcards'
   | 'revision'
   | 'subjects'
   | 'schedule'

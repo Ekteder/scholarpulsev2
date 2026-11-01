@@ -38,7 +38,10 @@ export function StudyTimerView() {
     skipPomodoroPhase,
   } = useTimer();
 
-  const activeSubjects = (data?.subjects || []).filter((s) => !s.isArchived);
+  const activeSubjects = React.useMemo(
+    () => (data?.subjects || []).filter((s) => !s.isArchived),
+    [data?.subjects]
+  );
 
   const [mode, setMode] = useState<'stopwatch' | 'pomodoro'>(
     activeTimer?.mode === 'stopwatch' ? 'stopwatch' : 'pomodoro'
@@ -63,6 +66,15 @@ export function StudyTimerView() {
   const [longBreakInterval, setLongBreakInterval] = useState(
     data?.profile?.pomodoroLongBreakInterval || 4
   );
+
+  useEffect(() => {
+    if (data?.profile) {
+      setFocusMins(data.profile.pomodoroFocusMinutes || 25);
+      setShortBreakMins(data.profile.pomodoroShortBreakMinutes || 5);
+      setLongBreakMins(data.profile.pomodoroLongBreakMinutes || 15);
+      setLongBreakInterval(data.profile.pomodoroLongBreakInterval || 4);
+    }
+  }, [data?.profile]);
 
   // Finish Session Summary Modal
   const [showFinishModal, setShowFinishModal] = useState(false);
@@ -154,9 +166,7 @@ export function StudyTimerView() {
     }
   }, [activeTimer, activeSubjects, selectedSubjectId]);
 
-  if (!data) return null;
-
-  const currentSubject = data.subjects.find(
+  const currentSubject = data?.subjects.find(
     (s) => s.id === (activeTimer?.subjectId || selectedSubjectId)
   );
 
@@ -168,7 +178,7 @@ export function StudyTimerView() {
       ? timerRemainingSeconds
       : timerElapsedSeconds
     : isPomodoro
-    ? (data.profile.pomodoroFocusMinutes || 25) * 60
+    ? (data?.profile?.pomodoroFocusMinutes || 25) * 60
     : 0;
 
   const progressRatio =
@@ -264,6 +274,8 @@ export function StudyTimerView() {
     });
     setShowConfigModal(false);
   };
+
+  if (!data) return null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

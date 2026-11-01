@@ -429,40 +429,6 @@ export const revisionRecordsRelations = relations(revisionRecords, ({ one }) => 
   }),
 }));
 
-// 16. Flashcards table (Spaced Repetition SM-2)
-export const flashcards = pgTable(
-  'flashcards',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: text('user_id').notNull(),
-    subjectId: uuid('subject_id')
-      .notNull()
-      .references(() => subjects.id, { onDelete: 'cascade' }),
-    topicId: uuid('topic_id'),
-    front: text('front').notNull(),
-    back: text('back').notNull(),
-    repetitions: integer('repetitions').notNull().default(0),
-    intervalDays: integer('interval_days').notNull().default(0),
-    easeFactor: text('ease_factor').notNull().default('2.5'),
-    nextReviewDate: text('next_review_date').notNull(), // YYYY-MM-DD
-    lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('flashcards_user_id_idx').on(table.userId),
-    index('flashcards_subject_id_idx').on(table.subjectId),
-    index('flashcards_review_date_idx').on(table.userId, table.nextReviewDate),
-  ]
-);
-
-export const flashcardsRelations = relations(flashcards, ({ one }) => ({
-  subject: one(subjects, {
-    fields: [flashcards.subjectId],
-    references: [subjects.id],
-  }),
-}));
-
 // 17. Curriculum Resources & Bookmarking table
 export const curriculumResources = pgTable(
   'curriculum_resources',

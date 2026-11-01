@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, lt, ne, or } from 'drizzle-orm';
 import { db } from './index';
 import {
   achievements,
@@ -8,7 +8,6 @@ import {
   curriculumResources,
   curriculumSubjects,
   curriculumTopics,
-  flashcards,
   goals,
   notificationPreferences,
   profiles,
@@ -377,7 +376,6 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       userGoals,
       catalogAchievements,
       unlockedAchievements,
-      userFlashcards,
     ] = await Promise.all([
       db
         .select()
@@ -413,11 +411,6 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
         .select()
         .from(userAchievements)
         .where(eq(userAchievements.userId, userId)),
-      db
-        .select()
-        .from(flashcards)
-        .where(eq(flashcards.userId, userId))
-        .orderBy(asc(flashcards.nextReviewDate)),
     ]);
 
     return {
@@ -429,7 +422,6 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       tasks: userTasks,
       schedules: userSchedules,
       goals: userGoals,
-      flashcards: userFlashcards,
       achievementsCatalog: catalogAchievements,
       userAchievements: unlockedAchievements,
     };
@@ -1759,156 +1751,6 @@ export async function updateUserNotificationPreferences(
 
 export const restoreUserDataFromBackup = restoreUserBackupTransactional;
 export const deleteUserEntireAccount = deleteUserAccountTransactional;
-
-// ==============================================================================
-// SPACED REPETITION FLASHCARDS (SM-2 Algorithm)
-// ==============================================================================
-
-export async function createUserFlashcard(
-  userId: string,
-  data: {
-    subjectId: string;
-    topicId?: string | null;
-    front: string;
-    back: string;
-  }
-) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [created] = await db
-    .insert(flashcards)
-    .values({
-      userId,
-      subjectId: data.subjectId,
-      topicId: data.topicId || null,
-      front: data.front,
-      back: data.back,
-      repetitions: 0,
-      intervalDays: 0,
-      easeFactor: '2.5',
-      nextReviewDate: today,
-    })
-    .returning();
-  return created;
-}
-
-export async function updateUserFlashcard(
-  userId: string,
-  id: string,
-  data: Partial<{
-    subjectId: string;
-    topicId: string | null;
-    front: string;
-    back: string;
-  }>
-) {
-  const [updated] = await db
-    .update(flashcards)
-    .set({
-      ...data,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
-    .returning();
-  return updated;
-}
-
-export async function deleteUserFlashcard(userId: string, id: string) {
-  await db
-    .delete(flashcards)
-    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
-}
-
-export async function reviewUserFlashcard(
-  userId: string,
-  id: string,
-  grade: 1 | 2 | 3 | 4
-) {
-  const [card] = await db
-    .select()
-    .from(flashcards)
-    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)));
-
-  if (!card) {
-    throw new Error('Flashcard not found');
-  }
-
-  const currentRepetitions = card.repetitions;
-  const currentInterval = card.intervalDays;
-  let easeFactorNum = parseFloat(card.easeFactor) || 2.5;
-
-  let newRepetitions = 0;
-  let newInterval = 1;
-
-  if (grade === 1) {
-    // Failure (Again): Reset repetitions to 0, review again tomorrow (1 day)
-    newRepetitions = 0;
-    newInterval = 1;
-  } else if (grade === 2) {
-    // Hard: Passing recall, but difficult. Advances interval modestly (+20% or min 1-2 days).
-    newRepetitions = currentRepetitions + 1;
-    if (currentRepetitions === 0) {
-      newInterval = 1;
-    } else if (currentRepetitions === 1) {
-      newInterval = 2;
-    } else {
-      newInterval = Math.max(currentInterval + 1, Math.round(currentInterval * 1.2));
-    }
-  } else if (grade === 3) {
-    // Good: Standard successful recall with easeFactor scaling
-    newRepetitions = currentRepetitions + 1;
-    if (currentRepetitions === 0) {
-      newInterval = 1;
-    } else if (currentRepetitions === 1) {
-      newInterval = 6;
-    } else {
-      newInterval = Math.max(currentInterval + 1, Math.round(currentInterval * easeFactorNum));
-    }
-  } else {
-    // Easy (grade === 4): Swift, confident recall. Leaps forward.
-    newRepetitions = currentRepetitions + 1;
-    if (currentRepetitions === 0) {
-      newInterval = 3;
-    } else if (currentRepetitions === 1) {
-      newInterval = 8;
-    } else {
-      newInterval = Math.max(currentInterval + 2, Math.round(currentInterval * easeFactorNum * 1.3));
-    }
-  }
-
-  // SM-2 Ease Factor calculation
-  // Map 1-4 grade to standard SM-2 0-5 quality scale:
-  // grade 1 (Again) -> q = 2 (EF delta: -0.32)
-  // grade 2 (Hard)  -> q = 3 (EF delta: -0.14)
-  // grade 3 (Good)  -> q = 4 (EF delta: 0.00)
-  // grade 4 (Easy)  -> q = 5 (EF delta: +0.10)
-  const q = grade + 1;
-  const efDelta = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
-  easeFactorNum = Math.max(1.3, Number((easeFactorNum + efDelta).toFixed(2)));
-
-  // Timezone-aware review date
-  const [profileRecord] = await db
-    .select({ timezone: profiles.timezone })
-    .from(profiles)
-    .where(eq(profiles.userId, userId));
-  const userTz = profileRecord?.timezone || 'Asia/Dhaka';
-  const todayYmd = toDateStringInTz(new Date(), userTz);
-  const nextReviewDate = addDaysToYmd(todayYmd, newInterval);
-
-  const [updated] = await db
-    .update(flashcards)
-    .set({
-      repetitions: newRepetitions,
-      intervalDays: newInterval,
-      easeFactor: easeFactorNum.toFixed(2),
-      nextReviewDate,
-      lastReviewedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(flashcards.id, id), eq(flashcards.userId, userId)))
-    .returning();
-
-  return updated;
-}
 
 // ==============================================================================
 // CHAPTER RESOURCES & BOOKMARKING

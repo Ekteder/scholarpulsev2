@@ -161,18 +161,6 @@ export const CurriculumCustomizationSchema = z.object({
   customOrder: z.number().int().optional().nullable(),
 });
 
-export const FlashcardSchema = z.object({
-  subjectId: z.string().uuid('Valid subject ID is required'),
-  topicId: z.string().uuid().optional().nullable(),
-  front: z.string().min(1, 'Front side cannot be empty').max(5000),
-  back: z.string().min(1, 'Back side cannot be empty').max(5000),
-});
-
-export const FlashcardReviewSchema = z.object({
-  id: z.string().uuid('Valid card ID is required'),
-  grade: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-});
-
 export const CurriculumResourceSchema = z.object({
   subjectId: z.string().uuid('Valid subject ID is required'),
   topicId: z.string().uuid('Valid topic ID is required'),

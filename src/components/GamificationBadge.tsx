@@ -92,7 +92,7 @@ export function GamificationBadge() {
               <h4 className="text-xs font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider">
                 How to Earn XP
               </h4>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
                   <div className="font-bold text-blue-600 dark:text-blue-400">+10 XP</div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">per 15 min studied</div>
@@ -104,10 +104,6 @@ export function GamificationBadge() {
                 <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
                   <div className="font-bold text-amber-600 dark:text-amber-400">+50 XP</div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">per unlocked milestone</div>
-                </div>
-                <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
-                  <div className="font-bold text-purple-600 dark:text-purple-400">+5 XP</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">per flashcard review</div>
                 </div>
               </div>
             </div>
