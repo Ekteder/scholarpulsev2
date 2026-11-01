@@ -90,8 +90,6 @@ const NAV_ITEMS: Array<{
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const emptySubscribe = () => () => {};
-
 export function WorkspaceShell() {
   const {
     user,
@@ -110,7 +108,6 @@ export function WorkspaceShell() {
   } = useWorkspace();
 
   const { theme, resolvedTheme } = useTheme();
-  const mounted = React.useSyncExternalStore(emptySubscribe, () => true, () => false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<Set<NavigationTab>>(() => new Set([activeTab]));
 
@@ -210,8 +207,6 @@ export function WorkspaceShell() {
 
   const currentNavLabel =
     NAV_ITEMS.find((item) => item.id === activeTab)?.label || 'Dashboard';
-
-  const isDark = mounted ? resolvedTheme === 'dark' : false;
 
   const handleSelectNav = (tab: NavigationTab) => {
     setActiveTab(tab);
@@ -487,8 +482,8 @@ export function WorkspaceShell() {
             <button
               type="button"
               onClick={toggleTheme}
-              title={mounted ? (isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode') : 'Toggle Theme'}
-              aria-label={mounted ? (isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode') : 'Toggle Theme'}
+              title="Toggle theme"
+              aria-label="Toggle theme"
               className="p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             >
               <Sun className="w-4 h-4 hidden dark:block" />
