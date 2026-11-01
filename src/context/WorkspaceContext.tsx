@@ -92,6 +92,7 @@ import {
 } from '../actions/flashcards';
 import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { useTheme } from 'next-themes';
+import { useRealtimeSync, SyncStatus, getClientDeviceId } from '../hooks/useRealtimeSync';
 
 export interface AuthUser {
   uid: string;
@@ -113,6 +114,10 @@ export interface WorkspaceContextValue {
   toasts: ToastMessage[];
   addToast: (toast: Omit<ToastMessage, 'id'>) => void;
   dismissToast: (id: string) => void;
+
+  // Real-time synchronization state
+  syncStatus: SyncStatus;
+  lastSyncTime: Date | null;
 
   // Timer state
   activeTimer: ActiveTimerSession | null;
@@ -206,17 +211,6 @@ export interface WorkspaceContextValue {
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
-
-function getClientDeviceId(): string {
-  if (typeof window === 'undefined') return 'server_device';
-  const key = 'scholarpulse_device_id';
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = `dev_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
-    localStorage.setItem(key, id);
-  }
-  return id;
-}
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -334,6 +328,466 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return promise;
   }, [setTheme]);
 
+  // Central Real-time Sync Event Handler (SSE + BroadcastChannel)
+  const handleIncomingSyncEvent = useCallback(
+    (eventType: string, payload: any, originDeviceId?: string) => {
+      switch (eventType) {
+        case 'timer:update': {
+          const incomingTimer = payload?.timer as ActiveTimerSession | undefined;
+          if (!incomingTimer) return;
+
+          setActiveTimer((current) => {
+            if (
+              !current ||
+              (incomingTimer.stateVersion || 0) >= (current.stateVersion || 0) ||
+              incomingTimer.idempotencyKey !== current.idempotencyKey
+            ) {
+              if (user && typeof window !== 'undefined') {
+                localStorage.setItem(
+                  `scholarpulse_timer_${user.uid}`,
+                  JSON.stringify(incomingTimer)
+                );
+              }
+              return incomingTimer;
+            }
+            return current;
+          });
+          break;
+        }
+
+        case 'timer:delete': {
+          setActiveTimer(null);
+          if (user && typeof window !== 'undefined') {
+            localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
+          }
+          break;
+        }
+
+        case 'task:create': {
+          const task = payload?.task;
+          if (task) {
+            setData((prev) => {
+              if (!prev) return null;
+              if (prev.tasks.some((t) => t.id === task.id)) return prev;
+              return { ...prev, tasks: [...prev.tasks, task] };
+            });
+          }
+          break;
+        }
+
+        case 'task:update': {
+          const task = payload?.task;
+          if (task) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                tasks: prev.tasks.map((t) => (t.id === task.id ? task : t)),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'task:delete': {
+          const taskId = payload?.taskId;
+          if (taskId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                tasks: prev.tasks.filter((t) => t.id !== taskId),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'session:create': {
+          const session = payload?.session;
+          if (session) {
+            setData((prev) => {
+              if (!prev) return null;
+              if (prev.studySessions.some((s) => s.id === session.id)) return prev;
+              return {
+                ...prev,
+                studySessions: [session, ...prev.studySessions],
+              };
+            });
+          }
+          refreshWorkspace().catch(() => {});
+          break;
+        }
+
+        case 'session:update': {
+          const session = payload?.session;
+          if (session) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                studySessions: prev.studySessions.map((s) =>
+                  s.id === session.id ? session : s
+                ),
+              };
+            });
+          }
+          refreshWorkspace().catch(() => {});
+          break;
+        }
+
+        case 'session:delete': {
+          const sessionId = payload?.sessionId;
+          if (sessionId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                studySessions: prev.studySessions.filter((s) => s.id !== sessionId),
+              };
+            });
+          }
+          refreshWorkspace().catch(() => {});
+          break;
+        }
+
+        case 'schedule:create': {
+          const schedule = payload?.schedule;
+          if (schedule) {
+            setData((prev) => {
+              if (!prev) return null;
+              if (prev.schedules.some((s) => s.id === schedule.id)) return prev;
+              return { ...prev, schedules: [...prev.schedules, schedule] };
+            });
+          }
+          break;
+        }
+
+        case 'schedule:update': {
+          const schedule = payload?.schedule;
+          if (schedule) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                schedules: prev.schedules.map((s) =>
+                  s.id === schedule.id ? schedule : s
+                ),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'schedule:delete': {
+          const scheduleId = payload?.scheduleId;
+          if (scheduleId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                schedules: prev.schedules.filter((s) => s.id !== scheduleId),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'goal:create': {
+          const goal = payload?.goal;
+          if (goal) {
+            setData((prev) => {
+              if (!prev) return null;
+              if (prev.goals.some((g) => g.id === goal.id)) return prev;
+              return { ...prev, goals: [...prev.goals, goal] };
+            });
+          }
+          break;
+        }
+
+        case 'goal:update': {
+          const goal = payload?.goal;
+          if (goal) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                goals: prev.goals.map((g) => (g.id === goal.id ? goal : g)),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'goal:delete': {
+          const goalId = payload?.goalId;
+          if (goalId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                goals: prev.goals.filter((g) => g.id !== goalId),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'flashcard:create': {
+          const flashcard = payload?.flashcard;
+          if (flashcard) {
+            setData((prev) => {
+              if (!prev) return null;
+              if ((prev.flashcards || []).some((f) => f.id === flashcard.id)) return prev;
+              return {
+                ...prev,
+                flashcards: [...(prev.flashcards || []), flashcard],
+              };
+            });
+          }
+          break;
+        }
+
+        case 'flashcard:update': {
+          const flashcard = payload?.flashcard;
+          if (flashcard) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                flashcards: (prev.flashcards || []).map((f) =>
+                  f.id === flashcard.id ? flashcard : f
+                ),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'flashcard:delete': {
+          const flashcardId = payload?.flashcardId;
+          if (flashcardId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                flashcards: (prev.flashcards || []).filter((f) => f.id !== flashcardId),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'subject:create': {
+          const subject = payload?.subject;
+          if (subject) {
+            setData((prev) => {
+              if (!prev) return null;
+              if (prev.subjects.some((s) => s.id === subject.id)) return prev;
+              return { ...prev, subjects: [...prev.subjects, subject] };
+            });
+          }
+          break;
+        }
+
+        case 'subject:update': {
+          const subject = payload?.subject;
+          if (subject) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                subjects: prev.subjects.map((s) =>
+                  s.id === subject.id ? subject : s
+                ),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'subject:delete': {
+          const subjectId = payload?.subjectId;
+          if (subjectId) {
+            setData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                subjects: prev.subjects.filter((s) => s.id !== subjectId),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'revision:toggle': {
+          const { record, topicId, category, isCompleted } = payload || {};
+          if (topicId && category) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              const filtered = prev.records.filter(
+                (r) => !(r.topicId === topicId && r.category === category)
+              );
+              const nextRecords =
+                isCompleted && record ? [...filtered, record] : filtered;
+              const updated = { ...prev, records: nextRecords };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:detailed': {
+          const record = payload?.record;
+          if (record) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              const filtered = prev.records.filter(
+                (r) =>
+                  r.id !== record.id &&
+                  !(r.topicId === record.topicId && r.category === record.category)
+              );
+              const nextRecords = [...filtered, record];
+              const updated = { ...prev, records: nextRecords };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:delete': {
+          const recordId = payload?.recordId;
+          if (recordId) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              const nextRecords = prev.records.filter((r) => r.id !== recordId);
+              const updated = { ...prev, records: nextRecords };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:topic:create': {
+          const topic = payload?.topic;
+          if (topic) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              if (prev.topics.some((t) => t.id === topic.id)) return prev;
+              const updated = { ...prev, topics: [...prev.topics, topic] };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:subject:create':
+        case 'revision:refresh': {
+          fetchRevisionWorkspace(true).catch(() => {});
+          break;
+        }
+
+        case 'revision:customization:update': {
+          const cust = payload?.customization;
+          if (cust) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              const filtered = prev.customizations.filter(
+                (c) =>
+                  !(
+                    c.targetType === cust.targetType &&
+                    c.targetId === cust.targetId
+                  )
+              );
+              const updated = { ...prev, customizations: [...filtered, cust] };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:resource:create': {
+          const resource = payload?.resource;
+          if (resource) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              if ((prev.resources || []).some((r) => r.id === resource.id))
+                return prev;
+              const updated = {
+                ...prev,
+                resources: [resource, ...(prev.resources || [])],
+              };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'revision:resource:delete': {
+          const resourceId = payload?.resourceId;
+          if (resourceId) {
+            setRevisionData((prev) => {
+              if (!prev) return null;
+              const updated = {
+                ...prev,
+                resources: (prev.resources || []).filter(
+                  (r) => r.id !== resourceId
+                ),
+              };
+              revisionCacheRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+        }
+
+        case 'profile:update': {
+          const profile = payload?.profile;
+          if (profile) {
+            setData((prev) =>
+              prev ? { ...prev, profile: { ...prev.profile, ...profile } } : null
+            );
+            if (profile.themePreference) {
+              setTheme(profile.themePreference);
+            }
+          }
+          break;
+        }
+
+        case 'preferences:update': {
+          const preferences = payload?.preferences;
+          if (preferences) {
+            setData((prev) =>
+              prev ? { ...prev, notificationPreferences: preferences } : null
+            );
+          }
+          break;
+        }
+
+        case 'workspace:refresh': {
+          refreshWorkspace().catch(() => {});
+          break;
+        }
+
+        default:
+          break;
+      }
+    },
+    [user, refreshWorkspace, setTheme]
+  );
+
+  // Connect native real-time sync (SSE + BroadcastChannel)
+  const { syncStatus, lastSyncTime, broadcastLocal } = useRealtimeSync({
+    userId: user?.uid,
+    onEvent: handleIncomingSyncEvent,
+  });
+
   // Initial Auth verification
   useEffect(() => {
     let isMounted = true;
@@ -361,35 +815,42 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshWorkspace]);
 
-  // Persist Active Timer via Server Action
-  const persistActiveTimer = useCallback(async (nextTimer: ActiveTimerSession | null) => {
-    setActiveTimer(nextTimer);
-    if (!user) return;
-    const localKey = `scholarpulse_timer_${user.uid}`;
+  // Persist Active Timer via Server Action and Real-Time Broadcast
+  const persistActiveTimer = useCallback(
+    async (nextTimer: ActiveTimerSession | null) => {
+      setActiveTimer(nextTimer);
+      if (!user) return;
+      const localKey = `scholarpulse_timer_${user.uid}`;
+      const deviceId = getClientDeviceId();
 
-    if (!nextTimer) {
-      if (typeof window !== 'undefined') localStorage.removeItem(localKey);
-      await deleteActiveTimerAction().catch(() => {});
-    } else {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(localKey, JSON.stringify(nextTimer));
+      if (!nextTimer) {
+        if (typeof window !== 'undefined') localStorage.removeItem(localKey);
+        broadcastLocal('timer:delete', {});
+        await deleteActiveTimerAction(deviceId).catch(() => {});
+      } else {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(localKey, JSON.stringify(nextTimer));
+        }
+        broadcastLocal('timer:update', { timer: nextTimer });
+        await syncActiveTimerAction(nextTimer).catch(() => {});
       }
-      await syncActiveTimerAction(nextTimer).catch(() => {});
-    }
-  }, [user]);
+    },
+    [user, broadcastLocal]
+  );
 
   // Complete onboarding
   const completeOnboarding = useCallback(async (payload: any) => {
     const res = await completeOnboardingAction(payload);
     if (res.success && res.data) {
       setData(res.data as unknown as WorkspaceData);
+      broadcastLocal('workspace:refresh', {});
       addToast({
         title: 'Welcome to ScholarPulse!',
         description: 'Your academic workspace is set up.',
         variant: 'success',
       });
     }
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Update profile
   const updateProfile = useCallback(async (payload: Partial<Profile>) => {
@@ -399,26 +860,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (payload.themePreference) {
         setTheme(payload.themePreference);
       }
+      broadcastLocal('profile:update', { profile: res.profile });
       addToast({
         title: 'Profile Updated',
         description: 'Your study preferences were saved.',
         variant: 'success',
       });
     }
-  }, [addToast, setTheme]);
+  }, [addToast, setTheme, broadcastLocal]);
 
   // Update notification prefs
   const updateNotificationPrefs = useCallback(async (payload: Partial<NotificationPreferences>) => {
     const res = await updateNotificationPreferencesAction(payload);
     if (res.success && res.preferences) {
       setData((prev) => prev ? { ...prev, notificationPreferences: res.preferences as NotificationPreferences } : null);
+      broadcastLocal('preferences:update', { preferences: res.preferences });
       addToast({
         title: 'Preferences Saved',
         description: 'Notification settings have been updated.',
         variant: 'success',
       });
     }
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Subjects CRUD
   const createSubject = useCallback(async (payload: Partial<Subject>) => {
@@ -426,9 +889,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.subject) throw new Error('Failed to create subject');
     const created = res.subject as Subject;
     setData((prev) => prev ? { ...prev, subjects: [...prev.subjects, created] } : null);
+    broadcastLocal('subject:create', { subject: created });
     addToast({ title: 'Subject Created', description: `Added ${created.name}`, variant: 'success' });
     return created;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const updateSubject = useCallback(async (id: string, payload: Partial<Subject>) => {
     const res = await updateSubjectAction(id, payload);
@@ -438,9 +902,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       subjects: prev.subjects.map((s) => s.id === id ? updated : s),
     } : null);
+    broadcastLocal('subject:update', { subject: updated });
     addToast({ title: 'Subject Updated', description: `Saved changes to ${updated.name}`, variant: 'success' });
     return updated;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const deleteSubject = useCallback(async (id: string) => {
     await deleteSubjectAction(id);
@@ -448,33 +913,37 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       subjects: prev.subjects.filter((s) => s.id !== id),
     } : null);
+    broadcastLocal('subject:delete', { subjectId: id });
     addToast({ title: 'Subject Deleted', description: 'Subject and its records removed.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Study Sessions CRUD
   const createSession = useCallback(async (payload: any) => {
     const res = await createStudySessionAction(payload);
     if (!res.success || !res.session) throw new Error('Failed to save study session');
     const session = res.session as StudySession;
+    broadcastLocal('session:create', { session });
     await refreshWorkspace();
     addToast({ title: 'Session Saved', description: 'Study activity logged successfully.', variant: 'success' });
     return session;
-  }, [addToast, refreshWorkspace]);
+  }, [addToast, refreshWorkspace, broadcastLocal]);
 
   const updateSession = useCallback(async (id: string, payload: any) => {
     const res = await updateStudySessionAction(id, payload);
     if (!res.success || !res.session) throw new Error('Failed to update session');
     const session = res.session as StudySession;
+    broadcastLocal('session:update', { session });
     await refreshWorkspace();
     addToast({ title: 'Session Updated', description: 'Session details modified.', variant: 'success' });
     return session;
-  }, [addToast, refreshWorkspace]);
+  }, [addToast, refreshWorkspace, broadcastLocal]);
 
   const deleteSession = useCallback(async (id: string) => {
     await deleteStudySessionAction(id);
+    broadcastLocal('session:delete', { sessionId: id });
     await refreshWorkspace();
     addToast({ title: 'Session Deleted', description: 'Session was removed from log.', variant: 'default' });
-  }, [addToast, refreshWorkspace]);
+  }, [addToast, refreshWorkspace, broadcastLocal]);
 
   // Tasks CRUD
   const createTask = useCallback(async (payload: any) => {
@@ -482,9 +951,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.task) throw new Error('Failed to create task');
     const task = res.task as unknown as TaskItem;
     setData((prev) => prev ? { ...prev, tasks: [...prev.tasks, task] } : null);
+    broadcastLocal('task:create', { task });
     addToast({ title: 'Task Created', description: `Added "${task.title}"`, variant: 'success' });
     return task;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const updateTask = useCallback(async (id: string, payload: any) => {
     const res = await updateTaskAction(id, payload);
@@ -494,8 +964,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       tasks: prev.tasks.map((t) => t.id === id ? task : t),
     } : null);
+    broadcastLocal('task:update', { task });
     return task;
-  }, []);
+  }, [broadcastLocal]);
 
   const deleteTask = useCallback(async (id: string) => {
     await deleteTaskAction(id);
@@ -503,8 +974,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       tasks: prev.tasks.filter((t) => t.id !== id),
     } : null);
+    broadcastLocal('task:delete', { taskId: id });
     addToast({ title: 'Task Deleted', description: 'Task removed.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Schedules CRUD
   const createSchedule = useCallback(async (payload: any) => {
@@ -512,9 +984,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.schedule) throw new Error('Failed to create schedule');
     const schedule = res.schedule as unknown as ScheduleItem;
     setData((prev) => prev ? { ...prev, schedules: [...prev.schedules, schedule] } : null);
+    broadcastLocal('schedule:create', { schedule });
     addToast({ title: 'Timetable Updated', description: 'Class schedule added.', variant: 'success' });
     return schedule;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const updateSchedule = useCallback(async (id: string, payload: any) => {
     const res = await updateScheduleAction(id, payload);
@@ -524,8 +997,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       schedules: prev.schedules.map((s) => s.id === id ? schedule : s),
     } : null);
+    broadcastLocal('schedule:update', { schedule });
     return schedule;
-  }, []);
+  }, [broadcastLocal]);
 
   const deleteSchedule = useCallback(async (id: string) => {
     await deleteScheduleAction(id);
@@ -533,8 +1007,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       schedules: prev.schedules.filter((s) => s.id !== id),
     } : null);
+    broadcastLocal('schedule:delete', { scheduleId: id });
     addToast({ title: 'Schedule Removed', description: 'Time slot deleted.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Goals CRUD
   const createGoal = useCallback(async (payload: any) => {
@@ -542,9 +1017,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.goal) throw new Error('Failed to create goal');
     const goal = res.goal as unknown as GoalItem;
     setData((prev) => prev ? { ...prev, goals: [...prev.goals, goal] } : null);
+    broadcastLocal('goal:create', { goal });
     addToast({ title: 'Goal Created', description: `Target: ${goal.title}`, variant: 'success' });
     return goal;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const updateGoal = useCallback(async (id: string, payload: any) => {
     const res = await updateGoalAction(id, payload);
@@ -554,8 +1030,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       goals: prev.goals.map((g) => g.id === id ? goal : g),
     } : null);
+    broadcastLocal('goal:update', { goal });
     return goal;
-  }, []);
+  }, [broadcastLocal]);
 
   const deleteGoal = useCallback(async (id: string) => {
     await deleteGoalAction(id);
@@ -563,17 +1040,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       goals: prev.goals.filter((g) => g.id !== id),
     } : null);
+    broadcastLocal('goal:delete', { goalId: id });
     addToast({ title: 'Goal Removed', description: 'Goal deleted.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Backup & Account
   const restoreBackup = useCallback(async (mode: 'merge' | 'replace', backupData: any) => {
     const res = await restoreBackupAction(backupData);
     if (res.success && res.data) {
       setData(res.data as unknown as WorkspaceData);
+      broadcastLocal('workspace:refresh', {});
       addToast({ title: 'Backup Restored', description: 'Your study data was recovered.', variant: 'success' });
     }
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const deleteAccount = useCallback(async () => {
     await deleteAccountAction();
@@ -652,8 +1131,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+
+    broadcastLocal('revision:toggle', {
+      record: rec,
+      subjectId: opts.subjectId,
+      topicId: opts.topicId,
+      category: opts.category,
+      isCompleted: opts.isCompleted,
+    });
+
     return rec;
-  }, [revisionData?.records]);
+  }, [revisionData?.records, broadcastLocal]);
 
   const saveDetailedRevision = useCallback(async (opts: any) => {
     const prevRecord = revisionData?.records.find((r) => r.id === opts.id || (r.topicId === opts.topicId && r.category === opts.category));
@@ -686,8 +1174,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+
+    broadcastLocal('revision:detailed', { record: rec });
     return rec;
-  }, [revisionData?.records]);
+  }, [revisionData?.records, broadcastLocal]);
 
   const deleteRevisionRecordItem = useCallback(async (recordId: string) => {
     const existing = revisionData?.records.find((r) => r.id === recordId);
@@ -712,7 +1202,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
-  }, [revisionData?.records]);
+
+    broadcastLocal('revision:delete', { recordId });
+  }, [revisionData?.records, broadcastLocal]);
 
   const addCustomCurriculumTopicItem = useCallback(async (opts: any) => {
     const res = await addCustomCurriculumTopicAction(opts);
@@ -724,16 +1216,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+    broadcastLocal('revision:topic:create', { topic });
     return topic;
-  }, []);
+  }, [broadcastLocal]);
 
   const addCustomCurriculumSubjectItem = useCallback(async (opts: any) => {
     const res = await addCustomCurriculumSubjectAction(opts);
     if (!res.success || !res.subject) throw new Error('Failed to add custom subject');
     const subject = res.subject as { subject: CurriculumSubject; paper: CurriculumPaper };
+    broadcastLocal('revision:subject:create', { subject });
     await fetchRevisionWorkspace(true);
     return subject;
-  }, [fetchRevisionWorkspace]);
+  }, [fetchRevisionWorkspace, broadcastLocal]);
 
   const updateCurriculumCustomizationItem = useCallback(async (opts: any) => {
     const res = await updateCurriculumCustomizationAction(opts);
@@ -748,8 +1242,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+    broadcastLocal('revision:customization:update', { customization: cust });
     return cust;
-  }, []);
+  }, [broadcastLocal]);
 
   // Spaced Repetition Flashcards
   const createFlashcard = useCallback(async (payload: any) => {
@@ -757,9 +1252,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.flashcard) throw new Error('Failed to create flashcard');
     const card = res.flashcard as unknown as FlashcardItem;
     setData((prev) => prev ? { ...prev, flashcards: [...(prev.flashcards || []), card] } : null);
+    broadcastLocal('flashcard:create', { flashcard: card });
     addToast({ title: 'Flashcard Created', description: 'Added to your spaced repetition deck.', variant: 'success' });
     return card;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const updateFlashcard = useCallback(async (id: string, payload: any) => {
     const res = await updateFlashcardAction(id, payload);
@@ -769,8 +1265,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       flashcards: (prev.flashcards || []).map((f) => f.id === id ? card : f),
     } : null);
+    broadcastLocal('flashcard:update', { flashcard: card });
     return card;
-  }, []);
+  }, [broadcastLocal]);
 
   const deleteFlashcard = useCallback(async (id: string) => {
     await deleteFlashcardAction(id);
@@ -778,8 +1275,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       flashcards: (prev.flashcards || []).filter((f) => f.id !== id),
     } : null);
+    broadcastLocal('flashcard:delete', { flashcardId: id });
     addToast({ title: 'Flashcard Removed', description: 'Deleted from your deck.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const reviewFlashcard = useCallback(async (id: string, grade: 1 | 2 | 3 | 4) => {
     const res = await reviewFlashcardAction({ id, grade });
@@ -792,8 +1290,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         flashcards: (prev.flashcards || []).map((f) => (f.id === id ? card : f)),
       };
     });
+    broadcastLocal('flashcard:update', { flashcard: card });
     return card;
-  }, []);
+  }, [broadcastLocal]);
 
   // Chapter Resources
   const createResource = useCallback(async (payload: any) => {
@@ -806,9 +1305,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+    broadcastLocal('revision:resource:create', { resource });
     addToast({ title: 'Resource Saved', description: `Saved: ${resource.title}`, variant: 'success' });
     return resource;
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   const deleteResource = useCallback(async (id: string) => {
     await deleteCurriculumResourceAction(id);
@@ -821,8 +1321,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       revisionCacheRef.current = updated;
       return updated;
     });
+    broadcastLocal('revision:resource:delete', { resourceId: id });
     addToast({ title: 'Resource Removed', description: 'Link deleted.', variant: 'default' });
-  }, [addToast]);
+  }, [addToast, broadcastLocal]);
 
   // Target Exam & Burndown settings
   const updateExamTarget = useCallback(async (targetExamName: string, targetExamDate: string) => {
@@ -835,8 +1336,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         targetExamDate,
       },
     } : null);
+    broadcastLocal('profile:update', { profile: { targetExamName, targetExamDate } });
     addToast({ title: 'Exam Target Updated', description: `${targetExamName} set to ${targetExamDate}`, variant: 'success' });
-  }, [addToast, updateProfileAction]);
+  }, [addToast, updateProfileAction, broadcastLocal]);
 
   const value = useMemo<WorkspaceContextValue>(() => ({
     user,
@@ -891,8 +1393,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     reviewFlashcard,
     createResource,
     deleteResource,
+    syncStatus,
+    lastSyncTime,
     updateExamTarget,
   }), [
+    syncStatus,
+    lastSyncTime,
     user,
     authLoading,
     workspaceLoading,

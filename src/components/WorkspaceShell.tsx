@@ -51,6 +51,7 @@ import {
 } from './PWAInstallUI';
 import { CreatorAttribution } from './CreatorAttribution';
 import { GamificationBadge } from './GamificationBadge';
+import { RealtimeSyncBadge } from './RealtimeSyncBadge';
 import { notificationService } from '@/lib/notifications';
 import { NavigationTab } from '@/types/index';
 import {
@@ -452,6 +453,7 @@ export function WorkspaceShell() {
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <RealtimeSyncBadge />
             <GamificationBadge />
 
             <div className="hidden sm:block">

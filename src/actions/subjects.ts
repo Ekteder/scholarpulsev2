@@ -7,6 +7,7 @@ import {
   deleteSubject,
 } from '@/lib/db/repository';
 import { SubjectSchema } from '@/lib/validations';
+import { publishSyncEvent } from '@/lib/realtime';
 import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
@@ -19,6 +20,15 @@ export async function createSubjectAction(raw: unknown) {
   const user = await requireUser();
   const parsed = SubjectSchema.parse(raw);
   const subject = await createSubject(user.uid, parsed);
+
+  if (subject) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'subject:create',
+      payload: { subject },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, subject };
 }
@@ -27,6 +37,15 @@ export async function updateSubjectAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = SubjectSchema.partial().parse(raw);
   const subject = await updateSubject(user.uid, id, parsed);
+
+  if (subject) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'subject:update',
+      payload: { subject },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, subject };
 }
@@ -34,6 +53,13 @@ export async function updateSubjectAction(id: string, raw: unknown) {
 export async function deleteSubjectAction(id: string) {
   const user = await requireUser();
   await deleteSubject(user.uid, id);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'subject:delete',
+    payload: { subjectId: id },
+  });
+
   revalidatePath('/');
   return { success: true };
 }

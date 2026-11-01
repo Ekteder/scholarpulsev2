@@ -1,0 +1,158 @@
+import { NextRequest } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
+import {
+  getRealtimeEmitter,
+  getSyncEventsForUser,
+  getLatestSyncEventId,
+  RealtimeSyncEvent,
+} from '@/lib/realtime';
+import { getUserActiveTimer } from '@/lib/db/repository';
+
+export const maxDuration = 60; // Up to 60 seconds on Vercel
+
+export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const searchParams = req.nextUrl.searchParams;
+  const clientDeviceId = searchParams.get('deviceId') || '';
+  const lastEventIdParam =
+    searchParams.get('lastEventId') || req.headers.get('last-event-id');
+
+  let lastSeenId = 0;
+  if (lastEventIdParam) {
+    const parsed = parseInt(lastEventIdParam, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      lastSeenId = parsed;
+    }
+  }
+
+  // If no lastEventId was provided (fresh connection), start from current latest event ID
+  if (lastSeenId === 0) {
+    lastSeenId = await getLatestSyncEventId(user.uid);
+  }
+
+  const encoder = new TextEncoder();
+  let isClosed = false;
+  let intervalTimer: NodeJS.Timeout | null = null;
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let maxDurationTimer: NodeJS.Timeout | null = null;
+  let localListener: ((ev: RealtimeSyncEvent) => void) | null = null;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const safeEnqueue = (chunk: string) => {
+        if (isClosed) return;
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch {
+          isClosed = true;
+        }
+      };
+
+      // 1. Configure SSE retry timeout to 1 second
+      safeEnqueue('retry: 1000\n\n');
+
+      // 2. Fetch current timer baseline and emit connected ack
+      const initialTimer = await getUserActiveTimer(user.uid);
+      safeEnqueue(
+        `event: connected\ndata: ${JSON.stringify({
+          status: 'connected',
+          serverTime: new Date().toISOString(),
+          lastSeenId,
+          activeTimer: initialTimer || null,
+        })}\n\n`
+      );
+
+      // If there's an active timer running on connection start, emit immediate timer:update
+      if (initialTimer) {
+        safeEnqueue(
+          `event: timer:update\ndata: ${JSON.stringify({
+            timer: initialTimer,
+            fromBaseline: true,
+          })}\n\n`
+        );
+      }
+
+      // 3. Fast In-Memory Listener for 0ms delivery within same worker process
+      const emitter = getRealtimeEmitter();
+      localListener = (ev: RealtimeSyncEvent) => {
+        if (isClosed) return;
+        if (ev.id > lastSeenId) {
+          lastSeenId = ev.id;
+          safeEnqueue(
+            `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
+          );
+        }
+      };
+      emitter.on(`user:${user.uid}`, localListener);
+
+      // 4. Polling function for cross-instance events from Neon PostgreSQL
+      const pollDbEvents = async () => {
+        if (isClosed) return;
+        try {
+          const events = await getSyncEventsForUser(user.uid, lastSeenId, 50);
+          for (const ev of events) {
+            if (isClosed) break;
+            if (ev.id > lastSeenId) {
+              lastSeenId = ev.id;
+              safeEnqueue(
+                `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
+              );
+            }
+          }
+        } catch (err) {
+          // Ignore transient polling query errors
+        }
+      };
+
+      // Poll initially for any missed events since lastSeenId
+      await pollDbEvents();
+
+      // Poll database every 1000ms for updates from other devices/instances
+      intervalTimer = setInterval(pollDbEvents, 1000);
+
+      // 5. Heartbeat every 15s to keep connection alive through proxies
+      heartbeatTimer = setInterval(() => {
+        if (isClosed) return;
+        safeEnqueue(': keepalive\n\n');
+      }, 15000);
+
+      // 6. Graceful closure at 55 seconds to prevent hard Vercel timeout errors
+      maxDurationTimer = setTimeout(() => {
+        if (!isClosed) {
+          isClosed = true;
+          if (localListener) {
+            emitter.off(`user:${user.uid}`, localListener);
+          }
+          if (intervalTimer) clearInterval(intervalTimer);
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
+          try {
+            controller.close();
+          } catch {}
+        }
+      }, 55000);
+    },
+    cancel() {
+      isClosed = true;
+      if (localListener) {
+        const emitter = getRealtimeEmitter();
+        emitter.off(`user:${user.uid}`, localListener);
+      }
+      if (intervalTimer) clearInterval(intervalTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (maxDurationTimer) clearTimeout(maxDurationTimer);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform, no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}

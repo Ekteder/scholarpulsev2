@@ -7,7 +7,7 @@ import {
   deleteActiveTimer,
 } from '@/lib/db/repository';
 import { ActiveTimerSyncSchema } from '@/lib/validations';
-import { revalidatePath } from 'next/cache';
+import { publishSyncEvent } from '@/lib/realtime';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -29,11 +29,29 @@ export async function syncActiveTimerAction(raw: unknown) {
     startedAt: new Date(parsed.startedAt),
     lastResumedAt: new Date(parsed.lastResumedAt),
   });
+
+  if (result.timer) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'timer:update',
+      payload: { timer: result.timer },
+      clientDeviceId: parsed.clientDeviceId,
+    });
+  }
+
   return { success: true, ...result };
 }
 
-export async function deleteActiveTimerAction() {
+export async function deleteActiveTimerAction(clientDeviceId?: string) {
   const user = await requireUser();
   await deleteActiveTimer(user.uid);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'timer:delete',
+    payload: {},
+    clientDeviceId,
+  });
+
   return { success: true };
 }

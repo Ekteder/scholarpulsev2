@@ -14,6 +14,7 @@ import {
   ProfileUpdateSchema,
   NotificationPreferencesSchema,
 } from '@/lib/validations';
+import { publishSyncEvent } from '@/lib/realtime';
 import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
@@ -59,6 +60,13 @@ export async function completeOnboardingAction(raw: unknown) {
     initialSubjects,
   });
   const data = await getUserWorkspaceData(user.uid, user.email, parsed.fullName);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'workspace:refresh',
+    payload: {},
+  });
+
   revalidatePath('/');
   return { success: true, data };
 }
@@ -67,6 +75,15 @@ export async function updateProfileAction(raw: unknown) {
   const user = await requireUser();
   const parsed = ProfileUpdateSchema.parse(raw);
   const profile = await updateUserProfile(user.uid, parsed);
+
+  if (profile) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'profile:update',
+      payload: { profile },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, profile };
 }
@@ -75,6 +92,15 @@ export async function updateNotificationPreferencesAction(raw: unknown) {
   const user = await requireUser();
   const parsed = NotificationPreferencesSchema.parse(raw);
   const prefs = await updateUserNotificationPreferences(user.uid, parsed);
+
+  if (prefs) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'preferences:update',
+      payload: { preferences: prefs },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, preferences: prefs };
 }
@@ -90,6 +116,13 @@ export async function restoreBackupAction(raw: unknown) {
     ...payload,
   });
   const data = await getUserWorkspaceData(user.uid, user.email, user.name);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'workspace:refresh',
+    payload: {},
+  });
+
   revalidatePath('/');
   return { success: true, data };
 }

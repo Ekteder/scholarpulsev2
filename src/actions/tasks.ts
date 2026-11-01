@@ -7,6 +7,7 @@ import {
   deleteTask,
 } from '@/lib/db/repository';
 import { TaskSchema } from '@/lib/validations';
+import { publishSyncEvent } from '@/lib/realtime';
 import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
@@ -22,6 +23,15 @@ export async function createTaskAction(raw: unknown) {
     ...parsed,
     dueDate: new Date(parsed.dueDate),
   });
+
+  if (task) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'task:create',
+      payload: { task },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, task };
 }
@@ -33,6 +43,15 @@ export async function updateTaskAction(id: string, raw: unknown) {
     ...parsed,
     dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,
   });
+
+  if (task) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'task:update',
+      payload: { task },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, task };
 }
@@ -40,6 +59,13 @@ export async function updateTaskAction(id: string, raw: unknown) {
 export async function deleteTaskAction(id: string) {
   const user = await requireUser();
   await deleteTask(user.uid, id);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'task:delete',
+    payload: { taskId: id },
+  });
+
   revalidatePath('/');
   return { success: true };
 }

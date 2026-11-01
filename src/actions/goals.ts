@@ -7,6 +7,7 @@ import {
   deleteGoal,
 } from '@/lib/db/repository';
 import { GoalSchema } from '@/lib/validations';
+import { publishSyncEvent } from '@/lib/realtime';
 import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
@@ -19,6 +20,15 @@ export async function createGoalAction(raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.parse(raw);
   const goal = await createGoal(user.uid, parsed);
+
+  if (goal) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'goal:create',
+      payload: { goal },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, goal };
 }
@@ -27,6 +37,15 @@ export async function updateGoalAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.partial().parse(raw);
   const goal = await updateGoal(user.uid, id, parsed);
+
+  if (goal) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'goal:update',
+      payload: { goal },
+    });
+  }
+
   revalidatePath('/');
   return { success: true, goal };
 }
@@ -34,6 +53,13 @@ export async function updateGoalAction(id: string, raw: unknown) {
 export async function deleteGoalAction(id: string) {
   const user = await requireUser();
   await deleteGoal(user.uid, id);
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'goal:delete',
+    payload: { goalId: id },
+  });
+
   revalidatePath('/');
   return { success: true };
 }
