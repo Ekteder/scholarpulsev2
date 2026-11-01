@@ -59,10 +59,10 @@ export function SettingsView() {
   );
   const [timezone, setTimezone] = useState(profile?.timezone || 'Asia/Dhaka');
   const [targetExamName, setTargetExamName] = useState(
-    profile?.targetExamName || 'HSC 2026'
+    profile?.targetExamName || 'HSC 2027'
   );
   const [targetExamDate, setTargetExamDate] = useState(
-    profile?.targetExamDate || '2026-06-15'
+    profile?.targetExamDate || '2027-06-01'
   );
   const [themePref, setThemePref] = useState(profile?.themePreference || theme || 'light');
   const [focusMins, setFocusMins] = useState(profile?.pomodoroFocusMinutes || 25);
@@ -84,8 +84,8 @@ export function SettingsView() {
       setDailyTargetHours(Number(((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(1)));
       setPreferredStudyTime(profile.preferredStudyTime || 'evening');
       setTimezone(profile.timezone || 'Asia/Dhaka');
-      setTargetExamName(profile.targetExamName || 'HSC 2026');
-      setTargetExamDate(profile.targetExamDate || '2026-06-15');
+      setTargetExamName(profile.targetExamName || 'HSC 2027');
+      setTargetExamDate(profile.targetExamDate || '2027-06-01');
       setFocusMins(profile.pomodoroFocusMinutes || 25);
       setShortBreakMins(profile.pomodoroShortBreakMinutes || 5);
       setLongBreakMins(profile.pomodoroLongBreakMinutes || 15);
@@ -320,7 +320,7 @@ export function SettingsView() {
               type="text"
               value={targetExamName}
               onChange={(e) => setTargetExamName(e.target.value)}
-              placeholder="e.g. HSC 2026, MCAT, SAT"
+              placeholder="e.g. HSC 2027, MCAT, SAT"
               className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white"
             />
           </div>

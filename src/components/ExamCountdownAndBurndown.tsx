@@ -27,8 +27,8 @@ export function ExamCountdownAndBurndown() {
   const [editModalOpen, setEditModalOpen] = useState(false);
 
   const profile = data?.profile;
-  const targetExamName = profile?.targetExamName || 'HSC 2026';
-  const targetExamDate = profile?.targetExamDate || '2026-06-15';
+  const targetExamName = profile?.targetExamName || 'HSC 2027';
+  const targetExamDate = profile?.targetExamDate || '2027-06-01';
 
   const [formExamName, setFormExamName] = useState(targetExamName);
   const [formExamDate, setFormExamDate] = useState(targetExamDate);
@@ -291,7 +291,7 @@ export function ExamCountdownAndBurndown() {
                   type="text"
                   value={formExamName}
                   onChange={(e) => setFormExamName(e.target.value)}
-                  placeholder="e.g. HSC 2026, Admission Exam"
+                  placeholder="e.g. HSC 2027, Admission Exam"
                   required
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
