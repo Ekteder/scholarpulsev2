@@ -263,6 +263,14 @@ export function WorkspaceProvider({
     } catch {}
   }, []);
 
+  // Sync initialUser if server props update
+  useEffect(() => {
+    if (initialUser !== undefined) {
+      setUser(initialUser);
+      setAuthLoading(false);
+    }
+  }, [initialUser]);
+
   // Instantly restore cached workspace data on client mount if available
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1325,12 +1333,19 @@ export function WorkspaceProvider({
         localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
       } catch {}
     }
-    await deleteAccountAction();
-    await signOutAction();
     setUser(null);
     setData(null);
     setActiveTimer(null);
     setRevisionData(null);
+    try {
+      await deleteAccountAction();
+      await signOutAction();
+    } catch (e) {
+      console.error('Delete account error:', e);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.replace('/');
+    }
   }, [user]);
 
   const signOut = useCallback(async () => {
@@ -1340,11 +1355,18 @@ export function WorkspaceProvider({
         localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
       } catch {}
     }
-    await signOutAction();
     setUser(null);
     setData(null);
     setActiveTimer(null);
     setRevisionData(null);
+    try {
+      await signOutAction();
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.replace('/');
+    }
   }, [user]);
 
   // Revision Tracker
