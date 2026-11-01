@@ -364,18 +364,31 @@ export async function ensureCurriculumSeedData(): Promise<void> {
       let subjectId = existingCodeMap.get(subj.code);
 
       if (!subjectId) {
-        const [inserted] = await tx
-          .insert(curriculumSubjects)
-          .values({
-            name: subj.name,
-            code: subj.code,
-            color: subj.color,
-            icon: subj.icon,
-            displayOrder: subjOrder,
-            userId: null,
-          })
-          .returning({ id: curriculumSubjects.id });
-        subjectId = inserted.id;
+        // Double check in db to guard against concurrent cold starts
+        const recheck = await tx
+          .select({ id: curriculumSubjects.id })
+          .from(curriculumSubjects)
+          .where(and(eq(curriculumSubjects.code, subj.code), isNull(curriculumSubjects.userId)))
+          .limit(1);
+
+        if (recheck.length > 0) {
+          subjectId = recheck[0].id;
+          existingCodeMap.set(subj.code, subjectId);
+        } else {
+          const [inserted] = await tx
+            .insert(curriculumSubjects)
+            .values({
+              name: subj.name,
+              code: subj.code,
+              color: subj.color,
+              icon: subj.icon,
+              displayOrder: subjOrder,
+              userId: null,
+            })
+            .returning({ id: curriculumSubjects.id });
+          subjectId = inserted.id;
+          existingCodeMap.set(subj.code, subjectId);
+        }
       }
 
       subjOrder++;
