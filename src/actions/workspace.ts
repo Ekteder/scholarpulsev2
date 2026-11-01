@@ -25,6 +25,31 @@ async function requireUser() {
   return user;
 }
 
+export async function getInitialWorkspaceSessionAction() {
+  let user = null;
+  try {
+    user = await getCurrentUser();
+    if (!user) {
+      return { success: true, user: null, data: null };
+    }
+    const data = await Promise.race([
+      getUserWorkspaceData(user.uid, user.email, user.name),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Workspace loading timed out. Please retry.')), 8000)
+      ),
+    ]);
+    return { success: true, user, data };
+  } catch (err: any) {
+    console.error('getInitialWorkspaceSessionAction error:', err);
+    return {
+      success: false,
+      user,
+      data: null,
+      error: err?.message || 'Failed to verify workspace session.',
+    };
+  }
+}
+
 export async function getWorkspaceDataAction() {
   const user = await requireUser();
   const data = await getUserWorkspaceData(user.uid, user.email, user.name);

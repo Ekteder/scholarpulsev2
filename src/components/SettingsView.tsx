@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { SUPPORTED_TIMEZONES, toDateStringInTz } from '@/lib/timezone';
 import {
@@ -77,20 +77,25 @@ export function SettingsView() {
     profile?.pomodoroLongBreakInterval || 4
   );
 
-  // Keep local theme and profile selection in sync
+  const initializedUserIdRef = useRef<string | null>(null);
+
+  // Keep local theme and profile selection in sync without clobbering active edits
   useEffect(() => {
     if (profile) {
-      setFullName(profile.fullName);
-      setAvatarUrl(profile.avatarUrl || '');
-      setDailyTargetHours(Number(((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(1)));
-      setPreferredStudyTime(profile.preferredStudyTime || 'evening');
-      setTimezone(profile.timezone || 'Asia/Dhaka');
-      setTargetExamName(profile.targetExamName || 'HSC 2027');
-      setTargetExamDate(profile.targetExamDate || '2027-06-01');
-      setFocusMins(profile.pomodoroFocusMinutes || 25);
-      setShortBreakMins(profile.pomodoroShortBreakMinutes || 5);
-      setLongBreakMins(profile.pomodoroLongBreakMinutes || 15);
-      setLongBreakInterval(profile.pomodoroLongBreakInterval || 4);
+      if (initializedUserIdRef.current !== profile.userId) {
+        initializedUserIdRef.current = profile.userId;
+        setFullName(profile.fullName);
+        setAvatarUrl(profile.avatarUrl || '');
+        setDailyTargetHours(Number(((profile.dailyStudyTargetMinutes || 360) / 60).toFixed(1)));
+        setPreferredStudyTime(profile.preferredStudyTime || 'evening');
+        setTimezone(profile.timezone || 'Asia/Dhaka');
+        setTargetExamName(profile.targetExamName || 'HSC 2027');
+        setTargetExamDate(profile.targetExamDate || '2027-06-01');
+        setFocusMins(profile.pomodoroFocusMinutes || 25);
+        setShortBreakMins(profile.pomodoroShortBreakMinutes || 5);
+        setLongBreakMins(profile.pomodoroLongBreakMinutes || 15);
+        setLongBreakInterval(profile.pomodoroLongBreakInterval || 4);
+      }
       if (profile.themePreference) {
         setThemePref(profile.themePreference);
       }

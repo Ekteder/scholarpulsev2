@@ -151,7 +151,34 @@ export function WorkspaceShell() {
     };
   }, [data]);
 
-  if (authLoading) {
+  if (workspaceError && !data) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-xl">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 font-display font-bold flex items-center justify-center mx-auto">
+            !
+          </div>
+          <h2 className="font-display text-base font-bold text-slate-900 dark:text-white">
+            Could Not Load Workspace
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{workspaceError}</p>
+          <button
+            type="button"
+            onClick={refreshWorkspace}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && !authLoading) {
+    return <AuthScreen />;
+  }
+
+  if (authLoading && !user && !data) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
         <div className="space-y-3 text-center">
@@ -166,10 +193,6 @@ export function WorkspaceShell() {
     );
   }
 
-  if (!user) {
-    return <AuthScreen />;
-  }
-
   if (workspaceLoading && !data) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
@@ -180,26 +203,6 @@ export function WorkspaceShell() {
             <div className="h-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl animate-pulse" />
             <div className="h-24 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl animate-pulse" />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (workspaceError && !data) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 text-center space-y-4">
-          <h2 className="font-display text-base font-bold text-slate-900 dark:text-white">
-            Could Not Load Workspace
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{workspaceError}</p>
-          <button
-            type="button"
-            onClick={refreshWorkspace}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer"
-          >
-            Retry Connection
-          </button>
         </div>
       </div>
     );

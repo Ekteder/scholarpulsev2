@@ -116,6 +116,7 @@ export const DEFAULT_ACHIEVEMENTS = [
 ];
 
 let achievementsSeeded = false;
+let inMemoryCatalogCache: (typeof achievements.$inferSelect)[] | null = null;
 
 export async function ensureAchievementsCatalog() {
   if (achievementsSeeded) return;
@@ -368,11 +369,9 @@ export async function recalculateGoalsAndAchievements(userId: string) {
  */
 export async function getUserWorkspaceData(userId: string, email: string, name?: string) {
   try {
-    await ensureAchievementsCatalog();
-    const profile = await getOrCreateProfile(userId, email, name);
-    const notifPrefs = await getNotificationPrefs(userId);
-
     const [
+      profileRows,
+      notifPrefsRows,
       userSubjects,
       userSessions,
       activeTimers,
@@ -382,6 +381,8 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       catalogAchievements,
       unlockedAchievements,
     ] = await Promise.all([
+      db.select().from(profiles).where(eq(profiles.userId, userId)),
+      db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId)),
       db
         .select()
         .from(subjects)
@@ -411,12 +412,38 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
         .from(goals)
         .where(eq(goals.userId, userId))
         .orderBy(desc(goals.createdAt)),
-      db.select().from(achievements).orderBy(asc(achievements.requirementValue)),
+      inMemoryCatalogCache
+        ? Promise.resolve(inMemoryCatalogCache)
+        : db.select().from(achievements).orderBy(asc(achievements.requirementValue)),
       db
         .select()
         .from(userAchievements)
         .where(eq(userAchievements.userId, userId)),
     ]);
+
+    let profile = profileRows[0];
+    if (!profile) {
+      profile = await getOrCreateProfile(userId, email, name);
+    }
+
+    let notifPrefs = notifPrefsRows[0];
+    if (!notifPrefs) {
+      notifPrefs = await getNotificationPrefs(userId);
+    }
+
+    let finalCatalog = inMemoryCatalogCache || catalogAchievements;
+    if (finalCatalog.length === 0) {
+      await ensureAchievementsCatalog();
+      finalCatalog = await db.select().from(achievements).orderBy(asc(achievements.requirementValue));
+      if (finalCatalog.length === 0) {
+        finalCatalog = DEFAULT_ACHIEVEMENTS.map((a) => ({
+          ...a,
+          createdAt: new Date(0),
+        }));
+      }
+    }
+    inMemoryCatalogCache = finalCatalog;
+    achievementsSeeded = true;
 
     return {
       profile,
@@ -427,7 +454,7 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       tasks: userTasks,
       schedules: userSchedules,
       goals: userGoals,
-      achievementsCatalog: catalogAchievements,
+      achievementsCatalog: finalCatalog,
       userAchievements: unlockedAchievements,
     };
   } catch (error) {

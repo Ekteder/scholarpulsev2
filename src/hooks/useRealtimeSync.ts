@@ -129,7 +129,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
         bc.onmessage = (event) => {
           if (isCleanedUp) return;
           const { eventType, payload, clientDeviceId, originDeviceId } = event.data || {};
-          const origin = originDeviceId || clientDeviceId;
+          const origin = 'crosstab_' + (originDeviceId || clientDeviceId || 'tab');
           if (eventType && onEventRef.current) {
             setLastSyncTime(new Date());
             onEventRef.current(eventType, payload, origin);

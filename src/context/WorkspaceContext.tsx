@@ -35,6 +35,7 @@ import {
   signOutAction,
 } from '../actions/auth';
 import {
+  getInitialWorkspaceSessionAction,
   getWorkspaceDataAction,
   completeOnboardingAction,
   updateProfileAction,
@@ -217,14 +218,24 @@ function applyThemeToDOM(theme: 'light' | 'dark' | 'system') {
   root.style.colorScheme = isDark ? 'dark' : 'light';
 }
 
+export interface WorkspaceProviderProps {
+  children: React.ReactNode;
+  initialUser?: AuthUser | null;
+  initialData?: WorkspaceData | null;
+}
+
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
 
-export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+export function WorkspaceProvider({
+  children,
+  initialUser,
+  initialData,
+}: WorkspaceProviderProps) {
+  const [user, setUser] = useState<AuthUser | null>(initialUser ?? null);
+  const [authLoading, setAuthLoading] = useState(initialUser === undefined);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const [data, setData] = useState<WorkspaceData | null>(null);
+  const [data, setData] = useState<WorkspaceData | null>(initialData ?? null);
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -240,6 +251,34 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const lastLocalThemeChangeRef = useRef<number>(0);
   const { setTheme } = useTheme();
+  const setThemeRef = useRef(setTheme);
+  setThemeRef.current = setTheme;
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  const cacheWorkspaceLocally = useCallback((uid: string, wData: WorkspaceData) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(`scholarpulse_cache_${uid}`, JSON.stringify(wData));
+    } catch {}
+  }, []);
+
+  // Instantly restore cached workspace data on client mount if available
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentUid = user?.uid;
+    if (currentUid && !data) {
+      try {
+        const cachedRaw = localStorage.getItem(`scholarpulse_cache_${currentUid}`);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (cached && typeof cached === 'object' && cached.profile) {
+            setData(cached);
+          }
+        }
+      } catch {}
+    }
+  }, [user?.uid]);
 
   const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -266,6 +305,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setWorkspaceLoading(true);
         setWorkspaceError(null);
 
+        // If user is not yet known, verify session first
+        let activeUser = user;
+        if (!activeUser) {
+          const session = await getInitialWorkspaceSessionAction();
+          if (session.success && session.user) {
+            setUser(session.user);
+            activeUser = session.user;
+            if (session.data) {
+              const workspace = session.data as unknown as WorkspaceData;
+              setData(workspace);
+              cacheWorkspaceLocally(session.user.uid, workspace);
+              return;
+            }
+          }
+        }
+
         const res = await getWorkspaceDataAction();
         if (!res.success || !res.data) {
           throw new Error('Failed to load workspace data');
@@ -273,6 +328,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         const workspace = res.data;
         setData(workspace as unknown as WorkspaceData);
+        if (activeUser?.uid) {
+          cacheWorkspaceLocally(activeUser.uid, workspace as unknown as WorkspaceData);
+        }
 
         // Sync theme with next-themes if specified in profile, respecting recent local actions
         if (workspace.profile?.themePreference) {
@@ -286,7 +344,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
                   localStorage.setItem('theme', profileTheme);
                 } catch {}
               }
-              setTheme(profileTheme);
+              setThemeRef.current?.(profileTheme);
             }
           }
         }
@@ -336,12 +394,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
     refreshPromiseRef.current = promise;
     return promise;
-  }, [setTheme]);
+  }, []);
 
   // Central Real-time Sync Event Handler (SSE + BroadcastChannel)
   const handleIncomingSyncEvent = useCallback(
     (eventType: string, payload: any, originDeviceId?: string) => {
-      const isFromSelf = Boolean(originDeviceId && originDeviceId === getClientDeviceId());
+      const isFromSelf = Boolean(
+        originDeviceId &&
+        originDeviceId === getClientDeviceId() &&
+        !originDeviceId.startsWith('crosstab_')
+      );
 
       switch (eventType) {
         case 'connected': {
@@ -775,7 +837,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             setData((prev) =>
               prev ? { ...prev, profile: { ...prev.profile, ...profile } } : null
             );
-            if (profile.themePreference) {
+            if (profile.themePreference && !isFromSelf) {
               const incomingTheme = profile.themePreference as 'light' | 'dark' | 'system';
               applyThemeToDOM(incomingTheme);
               if (typeof window !== 'undefined') {
@@ -783,7 +845,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
                   localStorage.setItem('theme', incomingTheme);
                 } catch {}
               }
-              setTheme(incomingTheme);
+              setThemeRef.current?.(incomingTheme);
             }
           }
           break;
@@ -810,7 +872,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           break;
       }
     },
-    [user, refreshWorkspace, setTheme]
+    [refreshWorkspace]
   );
 
   // Connect native real-time sync (SSE + BroadcastChannel)
@@ -819,32 +881,131 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     onEvent: handleIncomingSyncEvent,
   });
 
-  // Initial Auth verification
+  // Initial Auth & Workspace verification (Runs strictly ONCE on mount)
   useEffect(() => {
+    // If the server explicitly confirmed no session, end auth loading immediately
+    if (initialUser === null) {
+      setAuthLoading(false);
+      return;
+    }
+
     let isMounted = true;
     (async () => {
       try {
-        setAuthLoading(true);
-        const currentUser = await getCurrentUserAction();
+        if (initialUser === undefined) {
+          setAuthLoading(true);
+        }
+        setWorkspaceError(null);
+
+        // Safety fallback timeout to prevent hanging on network stalls
+        const timeoutPromise = new Promise<{
+          success: false;
+          user: null;
+          data: null;
+          error: string;
+        }>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                success: false,
+                user: null,
+                data: null,
+                error: 'Session check timed out. Please retry connection.',
+              }),
+            8000
+          )
+        );
+
+        const res = await Promise.race([
+          getInitialWorkspaceSessionAction(),
+          timeoutPromise,
+        ]);
+
         if (!isMounted) return;
-        setUser(currentUser);
-        if (currentUser) {
-          await refreshWorkspace();
-        } else {
+
+        if (res.success && res.user && res.data) {
+          setUser(res.user);
+          const workspace = res.data;
+          setData(workspace as unknown as WorkspaceData);
+          cacheWorkspaceLocally(res.user.uid, workspace as unknown as WorkspaceData);
+
+          // Synchronize theme preference from profile if not recently modified locally
+          if (workspace.profile?.themePreference) {
+            const profileTheme = workspace.profile.themePreference as 'light' | 'dark' | 'system';
+            const localTheme = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
+            if (!localTheme || Date.now() - lastLocalThemeChangeRef.current > 10000) {
+              if (localTheme !== profileTheme) {
+                applyThemeToDOM(profileTheme);
+                if (typeof window !== 'undefined') {
+                  try {
+                    localStorage.setItem('theme', profileTheme);
+                  } catch {}
+                }
+                setThemeRef.current?.(profileTheme);
+              }
+            }
+          }
+
+          // Active timer sync
+          const uid = workspace.profile?.userId;
+          if (uid && typeof window !== 'undefined') {
+            const localKey = `scholarpulse_timer_${uid}`;
+            const localRaw = localStorage.getItem(localKey);
+            let resolvedTimer: ActiveTimerSession | null = workspace.activeTimer;
+
+            if (localRaw) {
+              try {
+                if (!workspace.activeTimer) {
+                  resolvedTimer = null;
+                  localStorage.removeItem(localKey);
+                } else {
+                  resolvedTimer = workspace.activeTimer;
+                }
+              } catch {
+                localStorage.removeItem(localKey);
+              }
+            }
+
+            if (resolvedTimer) {
+              localStorage.setItem(localKey, JSON.stringify(resolvedTimer));
+              setActiveTimer(resolvedTimer);
+              if (!initialTimerRecoveryChecked.current) {
+                initialTimerRecoveryChecked.current = true;
+                setRecoveredSessionNotice(true);
+              }
+            } else {
+              localStorage.removeItem(localKey);
+              setActiveTimer(null);
+              initialTimerRecoveryChecked.current = true;
+            }
+          }
+        } else if (res.success && !res.user) {
+          setUser(null);
           setData(null);
           setActiveTimer(null);
           setRevisionData(null);
+        } else {
+          if (res.user) {
+            setUser(res.user);
+          }
+          if (!dataRef.current) {
+            setWorkspaceError(res.error || 'Failed to verify session.');
+          }
         }
-      } catch (err) {
-        console.error('Auth verification error:', err);
+      } catch (err: any) {
+        console.error('Session verification error:', err);
+        if (isMounted && !dataRef.current) {
+          setWorkspaceError(err?.message || 'Failed to load workspace.');
+        }
       } finally {
         if (isMounted) setAuthLoading(false);
       }
     })();
+
     return () => {
       isMounted = false;
     };
-  }, [refreshWorkspace]);
+  }, [initialUser, cacheWorkspaceLocally]);
 
   // Persist Active Timer via Server Action and Real-Time Broadcast
   const persistActiveTimer = useCallback(
@@ -906,20 +1067,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 3. Update next-themes hook state
-      setTheme(nextTheme);
+      setThemeRef.current?.(nextTheme);
 
       // 4. Optimistically update local workspace React state in 0ms
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              profile: {
-                ...prev.profile,
-                themePreference: nextTheme,
-              },
-            }
-          : null
-      );
+      setData((prev) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            themePreference: nextTheme,
+          },
+        };
+        if (prev.profile?.userId) {
+          cacheWorkspaceLocally(prev.profile.userId, updated);
+        }
+        return updated;
+      });
 
       // 5. Broadcast to other open browser tabs
       broadcastLocal('profile:update', { profile: { themePreference: nextTheme } });
@@ -929,7 +1093,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         console.warn('Failed to sync theme preference to cloud:', err);
       });
     },
-    [setTheme, broadcastLocal]
+    [broadcastLocal, cacheWorkspaceLocally]
   );
 
   // Update profile
@@ -944,7 +1108,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem('theme', nextTheme);
           } catch {}
         }
-        setTheme(nextTheme);
+        setThemeRef.current?.(nextTheme);
       }
       setData((prev) =>
         prev ? { ...prev, profile: { ...prev.profile, ...payload } } : null
@@ -966,7 +1130,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [addToast, setTheme, broadcastLocal]
+    [addToast, broadcastLocal]
   );
 
   // Update notification prefs
@@ -1155,13 +1319,33 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [addToast, broadcastLocal]);
 
   const deleteAccount = useCallback(async () => {
+    if (user && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(`scholarpulse_cache_${user.uid}`);
+        localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
+      } catch {}
+    }
     await deleteAccountAction();
     await signOutAction();
-  }, []);
+    setUser(null);
+    setData(null);
+    setActiveTimer(null);
+    setRevisionData(null);
+  }, [user]);
 
   const signOut = useCallback(async () => {
+    if (user && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(`scholarpulse_cache_${user.uid}`);
+        localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
+      } catch {}
+    }
     await signOutAction();
-  }, []);
+    setUser(null);
+    setData(null);
+    setActiveTimer(null);
+    setRevisionData(null);
+  }, [user]);
 
   // Revision Tracker
   const fetchRevisionWorkspace = useCallback(async (forceRefresh = false): Promise<RevisionWorkspacePayload> => {
