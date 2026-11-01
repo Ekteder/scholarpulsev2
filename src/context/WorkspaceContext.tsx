@@ -38,6 +38,7 @@ import {
   getWorkspaceDataAction,
   completeOnboardingAction,
   updateProfileAction,
+  updateThemePreferenceAction,
   updateNotificationPreferencesAction,
   restoreBackupAction,
   deleteAccountAction,
@@ -122,6 +123,7 @@ export interface WorkspaceContextValue {
   refreshWorkspace: () => Promise<void>;
   completeOnboarding: (payload: any) => Promise<void>;
   updateProfile: (payload: Partial<Profile>) => Promise<void>;
+  setThemePreference: (theme: 'light' | 'dark' | 'system') => void;
   updateNotificationPrefs: (payload: Partial<NotificationPreferences>) => Promise<void>;
   createSubject: (payload: Partial<Subject>) => Promise<Subject>;
   updateSubject: (id: string, payload: Partial<Subject>) => Promise<Subject>;
@@ -197,6 +199,24 @@ export interface WorkspaceContextValue {
   updateExamTarget: (examName: string, examDate: string) => Promise<void>;
 }
 
+function applyThemeToDOM(theme: 'light' | 'dark' | 'system') {
+  if (typeof window === 'undefined') return;
+  const root = document.documentElement;
+  const hasDarkPref =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = theme === 'dark' || (theme === 'system' && hasDarkPref);
+
+  if (isDark) {
+    root.classList.add('dark');
+    root.classList.remove('light');
+  } else {
+    root.classList.remove('dark');
+    root.classList.add('light');
+  }
+  root.style.colorScheme = isDark ? 'dark' : 'light';
+}
+
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined);
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
@@ -218,6 +238,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const initialTimerRecoveryChecked = useRef(false);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const lastLocalThemeChangeRef = useRef<number>(0);
   const { setTheme } = useTheme();
 
   const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
@@ -253,9 +274,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         const workspace = res.data;
         setData(workspace as unknown as WorkspaceData);
 
-        // Sync theme with next-themes if specified in profile
+        // Sync theme with next-themes if specified in profile, respecting recent local actions
         if (workspace.profile?.themePreference) {
-          setTheme(workspace.profile.themePreference);
+          const profileTheme = workspace.profile.themePreference as 'light' | 'dark' | 'system';
+          const localTheme = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
+          if (!localTheme || Date.now() - lastLocalThemeChangeRef.current > 10000) {
+            if (localTheme !== profileTheme) {
+              applyThemeToDOM(profileTheme);
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('theme', profileTheme);
+                } catch {}
+              }
+              setTheme(profileTheme);
+            }
+          }
         }
 
         // Active timer sync
@@ -743,7 +776,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               prev ? { ...prev, profile: { ...prev.profile, ...profile } } : null
             );
             if (profile.themePreference) {
-              setTheme(profile.themePreference);
+              const incomingTheme = profile.themePreference as 'light' | 'dark' | 'system';
+              applyThemeToDOM(incomingTheme);
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('theme', incomingTheme);
+                } catch {}
+              }
+              setTheme(incomingTheme);
             }
           }
           break;
@@ -850,22 +890,84 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [addToast, broadcastLocal]);
 
-  // Update profile
-  const updateProfile = useCallback(async (payload: Partial<Profile>) => {
-    const res = await updateProfileAction({ ...payload, clientDeviceId: getClientDeviceId() });
-    if (res.success && res.profile) {
-      setData((prev) => prev ? { ...prev, profile: res.profile as Profile } : null);
-      if (payload.themePreference) {
-        setTheme(payload.themePreference);
+  // 0ms instant optimistic theme switching
+  const setThemePreference = useCallback(
+    (nextTheme: 'light' | 'dark' | 'system') => {
+      lastLocalThemeChangeRef.current = Date.now();
+
+      // 1. Instant 0ms synchronous DOM manipulation
+      applyThemeToDOM(nextTheme);
+
+      // 2. Synchronous localStorage update
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('theme', nextTheme);
+        } catch {}
       }
-      broadcastLocal('profile:update', { profile: res.profile });
-      addToast({
-        title: 'Profile Updated',
-        description: 'Your study preferences were saved.',
-        variant: 'success',
+
+      // 3. Update next-themes hook state
+      setTheme(nextTheme);
+
+      // 4. Optimistically update local workspace React state in 0ms
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile: {
+                ...prev.profile,
+                themePreference: nextTheme,
+              },
+            }
+          : null
+      );
+
+      // 5. Broadcast to other open browser tabs
+      broadcastLocal('profile:update', { profile: { themePreference: nextTheme } });
+
+      // 6. Background cloud persist without blocking UI, toast, or spinner
+      updateThemePreferenceAction(nextTheme, getClientDeviceId()).catch((err) => {
+        console.warn('Failed to sync theme preference to cloud:', err);
       });
-    }
-  }, [addToast, setTheme, broadcastLocal]);
+    },
+    [setTheme, broadcastLocal]
+  );
+
+  // Update profile
+  const updateProfile = useCallback(
+    async (payload: Partial<Profile>) => {
+      if (payload.themePreference) {
+        const nextTheme = payload.themePreference as 'light' | 'dark' | 'system';
+        lastLocalThemeChangeRef.current = Date.now();
+        applyThemeToDOM(nextTheme);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('theme', nextTheme);
+          } catch {}
+        }
+        setTheme(nextTheme);
+      }
+      setData((prev) =>
+        prev ? { ...prev, profile: { ...prev.profile, ...payload } } : null
+      );
+
+      const res = await updateProfileAction({
+        ...payload,
+        clientDeviceId: getClientDeviceId(),
+      });
+      if (res.success && res.profile) {
+        setData((prev) =>
+          prev ? { ...prev, profile: res.profile as Profile } : null
+        );
+        broadcastLocal('profile:update', { profile: res.profile });
+        addToast({
+          title: 'Profile Updated',
+          description: 'Your study preferences were saved.',
+          variant: 'success',
+        });
+      }
+    },
+    [addToast, setTheme, broadcastLocal]
+  );
 
   // Update notification prefs
   const updateNotificationPrefs = useCallback(async (payload: Partial<NotificationPreferences>) => {
@@ -1310,6 +1412,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     refreshWorkspace,
     completeOnboarding,
     updateProfile,
+    setThemePreference,
     updateNotificationPrefs,
     createSubject,
     updateSubject,
@@ -1362,6 +1465,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     refreshWorkspace,
     completeOnboarding,
     updateProfile,
+    setThemePreference,
     updateNotificationPrefs,
     createSubject,
     updateSubject,

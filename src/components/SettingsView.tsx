@@ -36,6 +36,7 @@ export function SettingsView() {
     data,
     user,
     updateProfile,
+    setThemePreference,
     updateNotificationPrefs,
     restoreBackup,
     deleteAccount,
@@ -43,7 +44,7 @@ export function SettingsView() {
     addToast,
   } = useWorkspace();
 
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
 
   const profile = data?.profile;
   const { isInstalled, isStandalone, swRegistered, canTriggerNativePrompt } =
@@ -108,9 +109,8 @@ export function SettingsView() {
   const [deleting, setDeleting] = useState(false);
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
-    setTheme(newTheme);
     setThemePref(newTheme);
-    updateProfile({ themePreference: newTheme });
+    setThemePreference(newTheme);
   };
 
   const handleSaveProfileAndStudy = async (e: React.FormEvent) => {

@@ -88,7 +88,28 @@ export async function updateProfileAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
+  return { success: true, profile };
+}
+
+export async function updateThemePreferenceAction(
+  theme: 'light' | 'dark' | 'system',
+  clientDeviceId?: string
+) {
+  const user = await requireUser();
+  if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
+    throw new Error('Invalid theme preference');
+  }
+  const profile = await updateUserProfile(user.uid, { themePreference: theme });
+
+  if (profile) {
+    await publishSyncEvent({
+      userId: user.uid,
+      eventType: 'profile:update',
+      payload: { profile },
+      clientDeviceId,
+    });
+  }
+
   return { success: true, profile };
 }
 
