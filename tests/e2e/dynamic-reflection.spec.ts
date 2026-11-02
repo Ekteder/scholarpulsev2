@@ -165,8 +165,9 @@ test.describe('Dynamic Student Reflection & Preserved UI Design (F2, F6, F10)', 
       const studentContext = await page.context().browser()?.newContext();
       if (studentContext) {
         const studentPage = await studentContext.newPage();
-        await loginAsUnauthorizedUser(studentContext, UNAUTHORIZED_USER, 'http://127.0.0.1:3000');
-        await studentPage.goto('http://127.0.0.1:3000/');
+        const targetOrigin = process.env.BASE_URL || 'http://127.0.0.1:3000';
+        await loginAsUnauthorizedUser(studentContext, UNAUTHORIZED_USER, targetOrigin);
+        await studentPage.goto(targetOrigin + '/');
         // Verify student UI is strictly the student layout
         await expect(studentPage.locator('body')).not.toContainText('Admin Console');
         await studentContext.close();

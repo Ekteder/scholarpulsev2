@@ -134,6 +134,31 @@ export function WorkspaceShell() {
   }, [user]);
 
   React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (!tabParam) return;
+    const validTabs: NavigationTab[] = [
+      'dashboard',
+      'timer',
+      'subjects',
+      'revision',
+      'schedule',
+      'goals',
+      'analytics',
+      'history',
+      'achievements',
+      'settings',
+    ];
+    let resolvedTab = tabParam as NavigationTab;
+    if (tabParam === 'timetable') resolvedTab = 'schedule';
+    if (tabParam === 'badges') resolvedTab = 'achievements';
+    if (validTabs.includes(resolvedTab)) {
+      setActiveTab(resolvedTab);
+    }
+  }, [setActiveTab]);
+
+  React.useEffect(() => {
     setVisitedTabs((prev) => {
       if (prev.has(activeTab)) return prev;
       const next = new Set(prev);

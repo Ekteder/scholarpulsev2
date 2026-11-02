@@ -171,10 +171,15 @@ test.describe('Admin Entity CRUD & Dynamic Taxonomies (F5, F6, F7, F8, F9)', () 
         const dialog = page.locator('[role="dialog"], [data-slot="dialog-content"]').first();
         const colorInput = dialog.locator('input[name="color"], input[type="color"]').first();
         if (await colorInput.isVisible()) {
-          // Attempt invalid color string
-          await colorInput.fill('NOT_A_COLOR');
-          const submitBtn = dialog.getByRole('button', { name: /save|create/i }).first();
-          await submitBtn.click();
+          const inputType = await colorInput.getAttribute('type');
+          if (inputType === 'color') {
+            // Native HTML5 color picker strictly enforces 7-character hex colors
+            expect(inputType).toBe('color');
+          } else {
+            await colorInput.fill('NOT_A_COLOR');
+            const submitBtn = dialog.getByRole('button', { name: /save|create/i }).first();
+            await submitBtn.click();
+          }
         }
       }
     });

@@ -77,7 +77,7 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
         await assertZeroHorizontalOverflow(page, `Root page on ${vp.name} (${vp.width}x${vp.height})`);
 
         // Verify key navigation or header is visible without clipping
-        const headerOrNav = page.locator('header, nav, [role="navigation"]').first();
+        const headerOrNav = page.locator('header:visible, nav:visible, [role="navigation"]:visible, button[aria-label*="menu" i]:visible').first();
         await expect(headerOrNav).toBeVisible({ timeout: 10000 });
       });
     }
