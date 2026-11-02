@@ -14,27 +14,54 @@ function getDbSql() {
   return neon(connStr);
 }
 
-export async function seedActiveTimerForUser(userId: string, elapsedSeconds: number = 5084) {
+export async function seedActiveTimerForUser(
+  userId: string,
+  elapsedSeconds: number = 5084,
+  options?: {
+    phase?: 'focus' | 'short_break' | 'long_break';
+    mode?: 'stopwatch' | 'pomodoro';
+    subjectName?: string;
+    topic?: string;
+  }
+) {
   const sql = getDbSql();
+  const phase = options?.phase || 'focus';
+  const mode = options?.mode || 'stopwatch';
+  let targetDurationSeconds = 0;
+  if (mode === 'pomodoro') {
+    targetDurationSeconds = phase === 'long_break' ? Math.max(1800, elapsedSeconds + 600) : phase === 'short_break' ? Math.max(300, elapsedSeconds + 300) : Math.max(1500, elapsedSeconds + 3600);
+  }
+  const desiredSubjectName = options?.subjectName;
 
-  // 1. Ensure user has at least one active subject
-  const existingSubjects = await sql`SELECT id FROM subjects WHERE user_id = ${userId} AND is_archived = false LIMIT 1`;
+  // 1. Ensure user has a subject
   let subjectId: string;
-  if (existingSubjects.length > 0) {
-    subjectId = existingSubjects[0].id;
+  if (desiredSubjectName) {
+    const existingNamed = await sql`SELECT id FROM subjects WHERE user_id = ${userId} AND name = ${desiredSubjectName} AND is_archived = false LIMIT 1`;
+    if (existingNamed.length > 0) {
+      subjectId = existingNamed[0].id;
+    } else {
+      const inserted = await sql`
+        INSERT INTO subjects (user_id, name, color, icon, daily_target_minutes, weekly_target_minutes)
+        VALUES (${userId}, ${desiredSubjectName}, '#8B5CF6', 'Atom', 60, 300)
+        RETURNING id
+      `;
+      subjectId = inserted[0].id;
+    }
   } else {
-    const inserted = await sql`
-      INSERT INTO subjects (user_id, name, color, icon, daily_target_minutes, weekly_target_minutes)
-      VALUES (${userId}, 'Physics', '#2563EB', 'BookOpen', 60, 300)
-      RETURNING id
-    `;
-    subjectId = inserted[0].id;
+    const existingSubjects = await sql`SELECT id FROM subjects WHERE user_id = ${userId} AND is_archived = false LIMIT 1`;
+    if (existingSubjects.length > 0) {
+      subjectId = existingSubjects[0].id;
+    } else {
+      const inserted = await sql`
+        INSERT INTO subjects (user_id, name, color, icon, daily_target_minutes, weekly_target_minutes)
+        VALUES (${userId}, 'Physics', '#2563EB', 'BookOpen', 60, 300)
+        RETURNING id
+      `;
+      subjectId = inserted[0].id;
+    }
   }
 
   // 2. Insert or update active_timer_sessions
-  // For running timers: elapsed = accumulatedSeconds + (now - lastResumedAt).
-  // By setting lastResumedAt to now and accumulatedSeconds to elapsedSeconds,
-  // the initial elapsed time is precisely elapsedSeconds (e.g. 5084 -> 01:24:44).
   const startedAt = new Date(Date.now() - elapsedSeconds * 1000).toISOString();
   const lastResumedAt = new Date().toISOString();
   const idempotencyKey = `e2e_timer_${Date.now()}`;
@@ -46,8 +73,8 @@ export async function seedActiveTimerForUser(userId: string, elapsedSeconds: num
       completed_pomodoros, state_version, idempotency_key, updated_at
     )
     VALUES (
-      ${userId}, ${subjectId}, 'Quantum Mechanics', 'Notes for test', 'stopwatch', 'focus', 'running',
-      ${startedAt}, ${lastResumedAt}, ${elapsedSeconds}, 0,
+      ${userId}, ${subjectId}, ${options?.topic || 'Quantum Mechanics'}, 'Notes for test', ${mode}, ${phase}, 'running',
+      ${startedAt}, ${lastResumedAt}, ${elapsedSeconds}, ${targetDurationSeconds},
       0, 1, ${idempotencyKey}, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET

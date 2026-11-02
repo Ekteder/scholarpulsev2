@@ -39,7 +39,7 @@ test.describe('FloatingMiniTimer Mobile Layout & Icon-Only Noise Toggle (HH:MM:S
   });
 
   for (const vp of MOBILE_VIEWPORTS) {
-    test(`1. Active 1+ hour timer (01:24:44) on ${vp.name}: icon-only noise button, no text, clean spacing, zero overlap`, async ({
+    test(`1. Active 1+ hour timer (01:24:44) on ${vp.name}: icon-only noise button, clean spacing, zero overlap`, async ({
       page,
       context,
     }) => {
@@ -119,13 +119,35 @@ test.describe('FloatingMiniTimer Mobile Layout & Icon-Only Noise Toggle (HH:MM:S
         `Timer digits right edge (${digitsBox!.x + digitsBox!.width}px) overlaps first control button left edge (${firstButtonBox.x}px)`
       ).toBeLessThanOrEqual(firstButtonBox.x + 1);
 
-      // 9. Floating mini timer fits fully within viewport
+      // 9. Subject and Phase labels must not overlap control buttons
+      const subjectLabel = page.locator('[data-testid="floating-timer-subject"]');
+      const phaseLabel = page.locator('[data-testid="floating-timer-phase"]');
+      if (await subjectLabel.isVisible()) {
+        const subBox = await subjectLabel.boundingBox();
+        if (subBox) {
+          expect(
+            subBox.x + subBox.width,
+            `Subject label right edge overlaps first button`
+          ).toBeLessThanOrEqual(firstButtonBox.x + 1);
+        }
+      }
+      if (await phaseLabel.isVisible()) {
+        const phaseBox = await phaseLabel.boundingBox();
+        if (phaseBox) {
+          expect(
+            phaseBox.x + phaseBox.width,
+            `Phase label right edge overlaps first button`
+          ).toBeLessThanOrEqual(firstButtonBox.x + 1);
+        }
+      }
+
+      // 10. Floating mini timer fits fully within viewport
       const miniTimerBox = await miniTimer.boundingBox();
       expect(miniTimerBox).not.toBeNull();
       expect(miniTimerBox!.x).toBeGreaterThanOrEqual(0);
       expect(miniTimerBox!.x + miniTimerBox!.width).toBeLessThanOrEqual(vp.width + 1);
 
-      // 10. Zero horizontal window overflow
+      // 11. Zero horizontal window overflow
       await assertZeroHorizontalOverflow(page, `Mini timer 1h on ${vp.name}`);
     });
 
@@ -155,12 +177,22 @@ test.describe('FloatingMiniTimer Mobile Layout & Icon-Only Noise Toggle (HH:MM:S
       await expect(noiseToggle).toBeVisible();
       expect((await noiseToggle.innerText()).trim()).toBe('');
 
+      // Verify digits do not overlap noise toggle button
+      const digitsBox = await timerDigits.boundingBox();
+      const toggleBox = await noiseToggle.boundingBox();
+      expect(digitsBox).not.toBeNull();
+      expect(toggleBox).not.toBeNull();
+      expect(
+        digitsBox!.x + digitsBox!.width,
+        `10h digits overlap noise toggle button`
+      ).toBeLessThanOrEqual(toggleBox!.x + 1);
+
       // Verify zero overflow
       await assertZeroHorizontalOverflow(page, `Multi-hour mini timer 10h on ${vp.name}`);
     });
   }
 
-  test('3. Compact noise mixer popover opens on mobile and stays within viewport width', async ({
+  test('3. Compact noise mixer popover stays strictly within viewport width on 320px and dismisses properly', async ({
     page,
     context,
   }) => {
@@ -176,11 +208,32 @@ test.describe('FloatingMiniTimer Mobile Layout & Icon-Only Noise Toggle (HH:MM:S
     await expect(slidersBtn).toBeVisible({ timeout: 10000 });
     await slidersBtn.click();
 
-    // Popover must be visible and fit within screen
-    const popoverHeading = page.locator('h5:text("Ambient Sound Mixer")');
-    await expect(popoverHeading).toBeVisible();
+    // Popover must be visible
+    const popover = page.locator('[data-testid="compact-mixer-popover"]');
+    await expect(popover).toBeVisible();
+
+    // Popover must fit strictly inside the 320px viewport (no left or right clipping)
+    const box = await popover.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x, `Popover left edge (${box!.x}px) clipped offscreen`).toBeGreaterThanOrEqual(0);
+    expect(
+      box!.x + box!.width,
+      `Popover right edge (${box!.x + box!.width}px) exceeds 320px viewport`
+    ).toBeLessThanOrEqual(321);
 
     await assertZeroHorizontalOverflow(page, 'Compact mixer popover on 320px');
+
+    // Test dismiss via close button
+    const closeBtn = page.locator('[data-testid="compact-mixer-close"]');
+    await expect(closeBtn).toBeVisible();
+    await closeBtn.click();
+    await expect(popover).toBeHidden();
+
+    // Test dismiss via Escape key
+    await slidersBtn.click();
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
   });
 
   test('4. Noise toggle button toggles state on click without adding text', async ({
@@ -210,5 +263,55 @@ test.describe('FloatingMiniTimer Mobile Layout & Icon-Only Noise Toggle (HH:MM:S
     await noiseToggle.click();
     await expect(noiseToggle).toHaveAttribute('aria-label', 'Play Ambient Noise');
     expect((await noiseToggle.innerText()).trim()).toBe('');
+  });
+
+  test('5. Edge Case: Long Subject Name with Pomodoro Long Break on 320px compact viewport', async ({
+    page,
+    context,
+  }) => {
+    await seedActiveTimerForUser(UNAUTHORIZED_USER.uid, 120, {
+      phase: 'long_break',
+      mode: 'pomodoro',
+      subjectName: 'Advanced Quantum Electrodynamics',
+    });
+    await loginAsUnauthorizedUser(context, UNAUTHORIZED_USER, page.url());
+
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto('/?tab=dashboard');
+    await page.waitForLoadState('domcontentloaded');
+
+    const miniTimer = page.locator('[data-testid="floating-mini-timer"]');
+    await expect(miniTimer).toBeVisible({ timeout: 10000 });
+
+    // Verify phase label displays 'Long Break'
+    const phaseLabel = page.locator('[data-testid="floating-timer-phase"]');
+    await expect(phaseLabel).toBeVisible();
+    expect(await phaseLabel.textContent()).toBe('Long Break');
+
+    // Verify subject label is present and truncated
+    const subjectLabel = page.locator('[data-testid="floating-timer-subject"]');
+    await expect(subjectLabel).toBeVisible();
+
+    // Verify subject + phase labels do NOT overlap control buttons
+    const noiseToggle = page.locator('[data-testid="floating-noise-toggle"]');
+    const toggleBox = await noiseToggle.boundingBox();
+    const phaseBox = await phaseLabel.boundingBox();
+    expect(toggleBox).not.toBeNull();
+    expect(phaseBox).not.toBeNull();
+    expect(
+      phaseBox!.x + phaseBox!.width,
+      `Phase label overlaps noise toggle button on 320px with long break`
+    ).toBeLessThanOrEqual(toggleBox!.x + 1);
+
+    // Verify timer digits do not overlap noise toggle button
+    const timerDigits = page.locator('[data-testid="floating-timer-digits"]');
+    const digitsBox = await timerDigits.boundingBox();
+    expect(digitsBox).not.toBeNull();
+    expect(
+      digitsBox!.x + digitsBox!.width,
+      `Digits overlap noise toggle button on 320px with long break`
+    ).toBeLessThanOrEqual(toggleBox!.x + 1);
+
+    await assertZeroHorizontalOverflow(page, 'Long subject + long break on 320px');
   });
 });

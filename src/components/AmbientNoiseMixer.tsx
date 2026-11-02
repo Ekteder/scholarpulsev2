@@ -90,6 +90,15 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    if (!compactMixerOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCompactMixerOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [compactMixerOpen]);
+
   const handleTogglePlay = async () => {
     if (!ambientSound) return;
     await ambientSound.togglePlay();
@@ -107,7 +116,7 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
 
   if (compact) {
     return (
-      <div className="relative inline-flex items-center gap-1">
+      <div className="inline-flex items-center gap-1">
         <button
           type="button"
           onClick={handleTogglePlay}
@@ -144,7 +153,10 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
 
         {/* Floating Compact Mixer Popover */}
         {compactMixerOpen && (
-          <div className="absolute bottom-full right-0 mb-3 w-76 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-slate-900/98 backdrop-blur-xl border border-slate-700/90 rounded-2xl p-4 shadow-2xl z-50 text-white space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div
+            data-testid="compact-mixer-popover"
+            className="absolute bottom-full right-0 mb-3 w-76 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-slate-900/98 backdrop-blur-xl border border-slate-700/90 rounded-2xl p-4 shadow-2xl z-50 text-white space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          >
             {/* Header */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -159,8 +171,10 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
               <button
                 type="button"
                 onClick={() => setCompactMixerOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                data-testid="compact-mixer-close"
+                aria-label="Close Mixer"
                 title="Close Mixer"
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

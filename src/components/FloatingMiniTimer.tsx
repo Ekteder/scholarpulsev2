@@ -42,20 +42,33 @@ export function FloatingMiniTimer() {
       data-testid="floating-mini-timer"
       className="fixed bottom-20 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 z-40 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white border border-slate-700/80 rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 shadow-xl flex items-center justify-between sm:justify-start gap-2 sm:gap-4 max-w-md animate-in fade-in slide-in-from-bottom-2 duration-200"
     >
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
         <div
-          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+          className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 shadow-xs"
           style={{ backgroundColor: subject?.color || '#2563EB' }}
         >
           <Timer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
         </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] text-slate-300 leading-tight">
-            <span className="font-medium truncate max-w-[65px] xs:max-w-[100px] sm:max-w-none">{subject?.name || 'Study'}</span>
-            <span>·</span>
-            <span className="text-blue-300 whitespace-nowrap">{phaseLabel}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] text-slate-300 leading-tight min-w-0">
+            <span
+              data-testid="floating-timer-subject"
+              className="font-medium truncate min-w-0"
+            >
+              {subject?.name || 'Study'}
+            </span>
+            <span className="text-slate-500 shrink-0">·</span>
+            <span
+              data-testid="floating-timer-phase"
+              className="text-blue-300 whitespace-nowrap shrink-0"
+            >
+              {phaseLabel}
+            </span>
           </div>
-          <div data-testid="floating-timer-digits" className="font-mono tabular-nums text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
+          <div
+            data-testid="floating-timer-digits"
+            className="font-mono tabular-nums text-[15px] sm:text-lg font-bold tracking-tight text-white leading-tight"
+          >
             {formatDigitalClock(displaySeconds, displaySeconds >= 3600)}
           </div>
         </div>
