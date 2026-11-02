@@ -59,13 +59,13 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.status === 200) {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
           }
           return response;
         })
         .catch(async () => {
           const cache = await caches.open(CACHE_NAME);
-          const cachedIndex = await cache.match('/index.html');
+          const cachedIndex = await cache.match('/');
           if (cachedIndex) return cachedIndex;
           const offlineFallback = await cache.match(OFFLINE_URL);
           return offlineFallback || Response.error();

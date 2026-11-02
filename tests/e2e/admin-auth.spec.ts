@@ -65,7 +65,7 @@ test.describe('Admin Authentication & Google OAuth Allowlist Guard (F1, F3)', ()
       context,
     }) => {
       await loginAsAdmin(context, ADMIN_USER, page.url());
-      await page.goto('/admin');
+      await page.goto('/admin', { waitUntil: 'domcontentloaded' });
       // Check presence of admin nav links or buttons
       const navLinks = page.locator('nav a, aside a, [role="navigation"] a');
       await expect(navLinks.first()).toBeVisible({ timeout: 10000 });
