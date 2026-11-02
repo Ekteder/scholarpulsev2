@@ -48,7 +48,7 @@ import {
   setAdminUserBanStatus,
   setAdminUserTargetedAnnouncement,
 } from '@/lib/db/repository';
-import { publishSyncEvent } from '@/lib/realtime';
+import { publishSyncEvent, emitAdminSyncEvent } from '@/lib/realtime';
 
 // ==============================================================================
 // Validation Schemas
@@ -439,6 +439,13 @@ export async function updateAdminUserDetailAction(userId: string, raw: unknown) 
       payload: {},
     }).catch(() => {});
 
+    // Broadcast real-time admin sync event across open admin panels
+    await emitAdminSyncEvent('admin:user:change', {
+      userId,
+      user: updated,
+      timestamp: new Date().toISOString(),
+    }).catch((e) => console.error('Failed to emit admin:user:change event:', e));
+
     revalidatePath('/', 'layout');
     return { success: true, user: updated };
   } catch (err: any) {
@@ -488,6 +495,17 @@ export async function toggleAdminUserBanAction(
       }).catch(() => {});
     }
 
+    // Broadcast real-time admin sync event across open admin panels
+    const adminEventType = isBanned ? 'admin:user:banned' : 'admin:user:unbanned';
+    await emitAdminSyncEvent(adminEventType, {
+      userId,
+      isBanned,
+      bannedReason: updated.isBanned ? (updated.bannedReason || sanitizedReason || '') : null,
+      bannedAt: updated.bannedAt ? updated.bannedAt.toISOString() : null,
+      user: updated,
+      timestamp: new Date().toISOString(),
+    }).catch((e) => console.error('Failed to emit admin ban sync event:', e));
+
     revalidatePath('/', 'layout');
     return { success: true, user: updated };
   } catch (err: any) {
@@ -523,6 +541,17 @@ export async function setAdminUserTargetedAnnouncementAction(
       payload: { targetedAnnouncement: announcement.trim() },
     }).catch(() => {});
 
+    // Broadcast real-time admin sync event across open admin panels
+    await emitAdminSyncEvent('admin:announcement:dispatched', {
+      userId,
+      targetedAnnouncement: updated.targetedAnnouncement || '',
+      targetedAnnouncementCreatedAt: updated.targetedAnnouncementCreatedAt
+        ? updated.targetedAnnouncementCreatedAt.toISOString()
+        : new Date().toISOString(),
+      user: updated,
+      timestamp: new Date().toISOString(),
+    }).catch((e) => console.error('Failed to emit admin announcement event:', e));
+
     revalidatePath('/', 'layout');
     return { success: true, user: updated };
   } catch (err: any) {
@@ -530,5 +559,9 @@ export async function setAdminUserTargetedAnnouncementAction(
     return { success: false, error: err?.message || 'Database error setting targeted announcement' };
   }
 }
+
+// Action aliases for flexibility across administrative modules and tests
+export const toggleUserBanAction = toggleAdminUserBanAction;
+export const sendTargetedAnnouncementAction = setAdminUserTargetedAnnouncementAction;
 
 

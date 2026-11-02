@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isUserAdmin } from '@/lib/auth';
 import {
   getRealtimeEmitter,
   getSyncEventsForUser,
   getLatestSyncEventId,
   RealtimeSyncEvent,
+  ADMIN_REALTIME_CHANNEL,
 } from '@/lib/realtime';
 import { getUserActiveTimer } from '@/lib/db/repository';
 
@@ -17,6 +18,8 @@ export async function GET(req: NextRequest) {
       status: user?.isBanned ? 403 : 401,
     });
   }
+
+  const isAdmin = ((user as any).role === 'admin') || (await isUserAdmin(user));
 
   const searchParams = req.nextUrl.searchParams;
   const clientDeviceId = searchParams.get('deviceId') || '';
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   // If no lastEventId was provided (fresh connection), start from current latest event ID
   if (lastSeenId === 0) {
-    lastSeenId = await getLatestSyncEventId(user.uid);
+    lastSeenId = await getLatestSyncEventId(user.uid, isAdmin);
   }
 
   const encoder = new TextEncoder();
@@ -42,6 +45,7 @@ export async function GET(req: NextRequest) {
   let heartbeatTimer: NodeJS.Timeout | null = null;
   let maxDurationTimer: NodeJS.Timeout | null = null;
   let localListener: ((ev: RealtimeSyncEvent) => void) | null = null;
+  let adminListener: ((ev: RealtimeSyncEvent) => void) | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -65,6 +69,7 @@ export async function GET(req: NextRequest) {
           serverTime: new Date().toISOString(),
           lastSeenId,
           activeTimer: initialTimer || null,
+          isAdmin,
         })}\n\n`
       );
 
@@ -99,11 +104,25 @@ export async function GET(req: NextRequest) {
       };
       emitter.on(`user:${user.uid}`, localListener);
 
+      // If user is allowlisted admin, subscribe to in-memory admin events channel
+      if (isAdmin) {
+        adminListener = (ev: RealtimeSyncEvent) => {
+          if (isClosed) return;
+          if (ev.id > lastSeenId) {
+            lastSeenId = ev.id;
+            safeEnqueue(
+              `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
+            );
+          }
+        };
+        emitter.on(ADMIN_REALTIME_CHANNEL, adminListener);
+      }
+
       // 4. Polling function for cross-instance events from Neon PostgreSQL
       const pollDbEvents = async () => {
         if (isClosed) return;
         try {
-          const events = await getSyncEventsForUser(user.uid, lastSeenId, 50);
+          const events = await getSyncEventsForUser(user.uid, lastSeenId, 50, isAdmin);
           for (const ev of events) {
             if (isClosed) break;
             if (ev.id > lastSeenId) {
@@ -137,6 +156,9 @@ export async function GET(req: NextRequest) {
           if (localListener) {
             emitter.off(`user:${user.uid}`, localListener);
           }
+          if (adminListener) {
+            emitter.off(ADMIN_REALTIME_CHANNEL, adminListener);
+          }
           if (intervalTimer) clearInterval(intervalTimer);
           if (heartbeatTimer) clearInterval(heartbeatTimer);
           try {
@@ -147,9 +169,12 @@ export async function GET(req: NextRequest) {
     },
     cancel() {
       isClosed = true;
+      const emitter = getRealtimeEmitter();
       if (localListener) {
-        const emitter = getRealtimeEmitter();
         emitter.off(`user:${user.uid}`, localListener);
+      }
+      if (adminListener) {
+        emitter.off(ADMIN_REALTIME_CHANNEL, adminListener);
       }
       if (intervalTimer) clearInterval(intervalTimer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);

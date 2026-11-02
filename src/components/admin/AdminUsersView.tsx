@@ -54,6 +54,7 @@ import {
 } from '@/actions/admin';
 import type { AdminUserListItem, AdminUserDetailResult } from '@/lib/db/repository';
 import { SUPPORTED_TIMEZONES } from '@/lib/timezone';
+import { useAdminRealtimeSync } from '@/hooks/useAdminRealtimeSync';
 
 export function AdminUsersView() {
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
@@ -100,6 +101,116 @@ export function AdminUsersView() {
 
   // Copied ID state
   const [copiedId, setCopiedId] = useState(false);
+
+  // Real-time Administrative SSE synchronization
+  const { syncStatus, lastSyncTime, broadcastAdminLocal } = useAdminRealtimeSync({
+    onUserChange: (payload) => {
+      const { userId, user } = payload;
+      if (!userId) return;
+
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.userId !== userId) return u;
+          return {
+            ...u,
+            ...(user?.fullName ? { fullName: user.fullName } : {}),
+            ...(user?.email ? { email: user.email } : {}),
+            ...(user?.avatarUrl !== undefined ? { avatarUrl: user.avatarUrl } : {}),
+          };
+        })
+      );
+
+      setDetailUser((prev) => {
+        if (!prev || prev.profile.userId !== userId) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            ...(user || {}),
+          },
+        };
+      });
+
+      if (selectedUserId === userId && user) {
+        if (user.fullName !== undefined) setFormFullName(user.fullName);
+        if (user.email !== undefined) setFormEmail(user.email);
+        if (user.avatarUrl !== undefined) setFormAvatarUrl(user.avatarUrl);
+        if (user.dailyStudyTargetMinutes !== undefined) {
+          setFormDailyTargetMinutes(user.dailyStudyTargetMinutes);
+          setFormDailyTargetHours((user.dailyStudyTargetMinutes / 60).toFixed(1));
+        }
+        if (user.preferredStudyTime !== undefined) setFormPreferredStudyTime(user.preferredStudyTime);
+        if (user.timezone !== undefined) setFormTimezone(user.timezone);
+        if (user.themePreference !== undefined) setFormThemePreference(user.themePreference);
+        if (user.pomodoroFocusMinutes !== undefined) setFormFocusMinutes(user.pomodoroFocusMinutes);
+        if (user.pomodoroShortBreakMinutes !== undefined) setFormShortBreakMinutes(user.pomodoroShortBreakMinutes);
+        if (user.pomodoroLongBreakMinutes !== undefined) setFormLongBreakMinutes(user.pomodoroLongBreakMinutes);
+        if (user.pomodoroLongBreakInterval !== undefined) setFormLongBreakInterval(user.pomodoroLongBreakInterval);
+        if (user.targetExamName !== undefined) setFormTargetExamName(user.targetExamName);
+        if (user.targetExamDate !== undefined) setFormTargetExamDate(user.targetExamDate);
+        if (user.gamificationXp !== undefined) setFormGamificationXp(user.gamificationXp);
+        if (user.onboardingCompleted !== undefined) setFormOnboardingCompleted(user.onboardingCompleted);
+      }
+    },
+
+    onUserBanToggle: (payload) => {
+      const { userId, isBanned, bannedReason, bannedAt } = payload;
+      if (!userId) return;
+
+      const effectiveBanned = Boolean(isBanned);
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.userId !== userId) return u;
+          return {
+            ...u,
+            isBanned: effectiveBanned,
+            bannedReason: effectiveBanned ? (bannedReason || 'Account suspended by administrator') : '',
+            bannedAt: bannedAt ? new Date(bannedAt) : (effectiveBanned ? new Date() : null),
+          };
+        })
+      );
+
+      setDetailUser((prev) => {
+        if (!prev || prev.profile.userId !== userId) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            isBanned: effectiveBanned,
+            bannedReason: effectiveBanned ? (bannedReason || 'Account suspended by administrator') : '',
+            bannedAt: bannedAt ? new Date(bannedAt) : (effectiveBanned ? new Date() : null),
+          },
+        };
+      });
+
+      if (selectedUserId === userId && !effectiveBanned) {
+        setBanReasonInput('');
+      }
+    },
+
+    onAnnouncementDispatched: (payload) => {
+      const { userId, targetedAnnouncement, targetedAnnouncementCreatedAt } = payload;
+      if (!userId) return;
+
+      setDetailUser((prev) => {
+        if (!prev || prev.profile.userId !== userId) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            targetedAnnouncement: targetedAnnouncement || '',
+            targetedAnnouncementCreatedAt: targetedAnnouncementCreatedAt
+              ? new Date(targetedAnnouncementCreatedAt)
+              : new Date(),
+          },
+        };
+      });
+
+      if (selectedUserId === userId) {
+        setTargetedAnnouncementText(targetedAnnouncement || '');
+      }
+    },
+  });
 
   const loadUsersList = async () => {
     setLoading(true);
@@ -206,6 +317,15 @@ export function AdminUsersView() {
         if (!nextBanned) {
           setBanReasonInput('');
         }
+
+        // Broadcast to other open tabs on this browser for 0ms cross-tab update
+        broadcastAdminLocal(nextBanned ? 'admin:user:banned' : 'admin:user:unbanned', {
+          userId,
+          isBanned: nextBanned,
+          bannedReason: nextBanned ? (effectiveReason || 'Account suspended by administrator') : '',
+          bannedAt: nextBanned ? new Date().toISOString() : null,
+          user: res.user,
+        });
       } else {
         setActionError(res.error || 'Failed to update ban status');
       }
@@ -268,6 +388,13 @@ export function AdminUsersView() {
           });
         }
 
+        // Broadcast to other open tabs on this browser
+        broadcastAdminLocal('admin:user:change', {
+          userId: selectedUserId,
+          user: res.user,
+          timestamp: new Date().toISOString(),
+        });
+
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         setActionError(res.error || 'Failed to update user profile');
@@ -299,6 +426,16 @@ export function AdminUsersView() {
           });
         }
         setTargetedAnnouncementText(res.user.targetedAnnouncement || '');
+
+        // Broadcast to other open tabs on this browser
+        broadcastAdminLocal('admin:announcement:dispatched', {
+          userId: selectedUserId,
+          targetedAnnouncement: res.user.targetedAnnouncement,
+          targetedAnnouncementCreatedAt: res.user.targetedAnnouncementCreatedAt,
+          user: res.user,
+          timestamp: new Date().toISOString(),
+        });
+
         setTimeout(() => setAnnouncementSuccess(false), 3000);
       } else {
         setActionError(res.error || 'Failed to send targeted announcement');
@@ -346,6 +483,41 @@ export function AdminUsersView() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Subtle Live Realtime Sync Status Indicator */}
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors bg-muted/40 shadow-xs"
+            data-testid="admin-realtime-status"
+            title={
+              syncStatus === 'connected'
+                ? `Connected to Real-time Admin Stream (SSE active)${lastSyncTime ? ` • Last sync: ${lastSyncTime.toLocaleTimeString()}` : ''}`
+                : syncStatus === 'connecting'
+                ? 'Connecting to real-time administrative stream...'
+                : 'Disconnected from real-time stream'
+            }
+          >
+            <span className="relative flex h-2 w-2">
+              {syncStatus === 'connected' && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${
+                  syncStatus === 'connected'
+                    ? 'bg-emerald-500'
+                    : syncStatus === 'connecting'
+                    ? 'bg-amber-500 animate-pulse'
+                    : 'bg-muted-foreground'
+                }`}
+              />
+            </span>
+            <span className="text-muted-foreground font-mono text-[10px] sm:text-xs">
+              {syncStatus === 'connected'
+                ? 'Live Realtime Sync'
+                : syncStatus === 'connecting'
+                ? 'Connecting...'
+                : 'Offline'}
+            </span>
+          </div>
+
           <Button
             variant="outline"
             size="sm"
