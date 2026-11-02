@@ -68,6 +68,7 @@ import {
   MoreHorizontal,
   Play,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Sun,
   Target,
@@ -109,6 +110,7 @@ export function WorkspaceShell() {
     setThemePreference,
     refreshWorkspace,
     activeTimer,
+    signOut,
   } = useWorkspace();
 
   const { theme, resolvedTheme } = useTheme();
@@ -116,6 +118,7 @@ export function WorkspaceShell() {
   const [visitedTabs, setVisitedTabs] = useState<Set<NavigationTab>>(() => new Set([activeTab]));
   const [isAdmin, setIsAdmin] = useState(false);
   const announcementText = data?.announcementBanner?.trim() || '';
+  const targetedAnnouncementText = (data?.targetedAnnouncement || data?.profile?.targetedAnnouncement || '').trim();
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState<string | null>(null);
 
   React.useEffect(() => {
@@ -217,6 +220,31 @@ export function WorkspaceShell() {
       notificationService.stopBackgroundScheduler();
     };
   }, [data]);
+
+  if (user?.isBanned || data?.profile?.isBanned) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6" data-testid="banned-lockout-screen">
+        <div className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
+            Account Suspended
+          </h2>
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            Your account has been suspended by an administrator. Access to authenticated features on ScholarPulse is locked.
+          </p>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-semibold cursor-pointer transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (workspaceError && !data) {
     return (
@@ -624,6 +652,26 @@ export function WorkspaceShell() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+          )}
+          {/* Targeted Unclosable Announcement (R4) */}
+          {targetedAnnouncementText && (
+            <div
+              role="alert"
+              data-testid="targeted-announcement-banner"
+              className="mb-4 sm:mb-6 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-3.5 sm:p-4 shadow-md shadow-amber-500/10 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300"
+            >
+              <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 mt-0.5">
+                <Megaphone className="w-4 h-4 text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase font-bold tracking-wider text-amber-200 mb-0.5">
+                  Important Announcement
+                </div>
+                <p className="text-xs sm:text-sm font-medium leading-snug break-words whitespace-pre-wrap">
+                  {targetedAnnouncementText}
+                </p>
+              </div>
             </div>
           )}
           <React.Suspense

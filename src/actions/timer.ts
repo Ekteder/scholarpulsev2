@@ -11,7 +11,7 @@ import { publishSyncEvent } from '@/lib/realtime';
 
 async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
+  if (!user || user.isBanned) throw new Error(user?.isBanned ? 'Account is banned' : 'Unauthorized');
   return user;
 }
 

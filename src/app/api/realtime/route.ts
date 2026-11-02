@@ -12,8 +12,10 @@ export const maxDuration = 60; // Up to 60 seconds on Vercel
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 });
+  if (!user || user.isBanned) {
+    return new Response(user?.isBanned ? 'Account is banned' : 'Unauthorized', {
+      status: user?.isBanned ? 403 : 401,
+    });
   }
 
   const searchParams = req.nextUrl.searchParams;

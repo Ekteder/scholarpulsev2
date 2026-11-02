@@ -483,6 +483,7 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       userAchievements: unlockedAchievements,
       systemConfigurations: sysConfigMap,
       announcementBanner,
+      targetedAnnouncement: profile?.targetedAnnouncement || '',
     };
   } catch (error) {
     console.error('Database error in getUserWorkspaceData:', error);
@@ -2613,5 +2614,176 @@ export async function deleteAdminAchievement(id: string) {
   inMemoryCatalogCache = null;
   return deleted || null;
 }
+
+// ==============================================================================
+// Admin User Management Operations (R1, R2, R3, R4)
+// ==============================================================================
+
+export interface AdminUserListItem {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  avatarUrl: string | null;
+  isBanned: boolean;
+  bannedReason: string | null;
+  bannedAt: Date | string | null;
+  createdAt: Date | string;
+}
+
+export async function getAdminUsersList(): Promise<AdminUserListItem[]> {
+  try {
+    const rows = await db
+      .select({
+        id: profiles.id,
+        userId: profiles.userId,
+        email: profiles.email,
+        fullName: profiles.fullName,
+        avatarUrl: profiles.avatarUrl,
+        isBanned: profiles.isBanned,
+        bannedReason: profiles.bannedReason,
+        bannedAt: profiles.bannedAt,
+        createdAt: profiles.createdAt,
+      })
+      .from(profiles)
+      .orderBy(desc(profiles.createdAt));
+
+    return rows;
+  } catch (error) {
+    console.error('Database error in getAdminUsersList:', error);
+    throw new Error('Failed to load users list');
+  }
+}
+
+export interface AdminUserDetailResult {
+  profile: typeof profiles.$inferSelect;
+  stats: {
+    totalSessions: number;
+    totalStudyMinutes: number;
+    totalSubjects: number;
+    totalTasks: number;
+  };
+}
+
+export async function getAdminUserDetail(userId: string): Promise<AdminUserDetailResult | null> {
+  try {
+    const [profile] = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1);
+
+    if (!profile) return null;
+
+    const [sessions, userSubjs, userTsks] = await Promise.all([
+      db
+        .select({ durationSeconds: studySessions.durationSeconds })
+        .from(studySessions)
+        .where(eq(studySessions.userId, userId)),
+      db.select({ id: subjects.id }).from(subjects).where(eq(subjects.userId, userId)),
+      db.select({ id: tasks.id }).from(tasks).where(eq(tasks.userId, userId)),
+    ]);
+
+    const totalDurationSeconds = sessions.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
+
+    return {
+      profile,
+      stats: {
+        totalSessions: sessions.length,
+        totalStudyMinutes: Math.round(totalDurationSeconds / 60),
+        totalSubjects: userSubjs.length,
+        totalTasks: userTsks.length,
+      },
+    };
+  } catch (error) {
+    console.error('Database error in getAdminUserDetail:', error);
+    throw new Error('Failed to load user details');
+  }
+}
+
+export async function updateAdminUserDetail(
+  userId: string,
+  data: {
+    fullName?: string;
+    email?: string;
+    avatarUrl?: string;
+    dailyStudyTargetMinutes?: number;
+    preferredStudyTime?: string;
+    timezone?: string;
+    themePreference?: string;
+    pomodoroFocusMinutes?: number;
+    pomodoroShortBreakMinutes?: number;
+    pomodoroLongBreakMinutes?: number;
+    pomodoroLongBreakInterval?: number;
+    targetExamName?: string;
+    targetExamDate?: string;
+    gamificationXp?: number;
+    onboardingCompleted?: boolean;
+    isBanned?: boolean;
+    bannedReason?: string;
+    targetedAnnouncement?: string;
+  }
+) {
+  try {
+    const updated = await db
+      .update(profiles)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.userId, userId))
+      .returning();
+
+    return updated[0] || null;
+  } catch (error) {
+    console.error('Database error in updateAdminUserDetail:', error);
+    throw new Error('Failed to update user profile');
+  }
+}
+
+export async function setAdminUserBanStatus(userId: string, isBanned: boolean, reason?: string) {
+  try {
+    const [updated] = await db
+      .update(profiles)
+      .set({
+        isBanned,
+        bannedReason: isBanned ? (reason || 'Account suspended by administrator') : '',
+        bannedAt: isBanned ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.userId, userId))
+      .returning();
+
+    if (isBanned) {
+      await db.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId)).catch(() => {});
+    }
+
+    return updated || null;
+  } catch (error) {
+    console.error('Database error in setAdminUserBanStatus:', error);
+    throw new Error('Failed to update ban status');
+  }
+}
+
+export async function setAdminUserTargetedAnnouncement(userId: string, announcement: string) {
+  try {
+    const cleanAnnouncement = announcement.trim();
+    const [updated] = await db
+      .update(profiles)
+      .set({
+        targetedAnnouncement: cleanAnnouncement,
+        targetedAnnouncementCreatedAt: cleanAnnouncement ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.userId, userId))
+      .returning();
+
+    return updated || null;
+  } catch (error) {
+    console.error('Database error in setAdminUserTargetedAnnouncement:', error);
+    throw new Error('Failed to set targeted announcement');
+  }
+}
+
 
 

@@ -19,8 +19,8 @@ import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) {
-    throw new Error('Unauthorized');
+  if (!user || user.isBanned) {
+    throw new Error(user?.isBanned ? 'Account is banned' : 'Unauthorized');
   }
   return user;
 }
@@ -31,6 +31,9 @@ export async function getInitialWorkspaceSessionAction() {
     user = await getCurrentUser();
     if (!user) {
       return { success: true, user: null, data: null };
+    }
+    if (user.isBanned) {
+      return { success: true, user, data: null };
     }
     const data = await Promise.race([
       getUserWorkspaceData(user.uid, user.email, user.name),

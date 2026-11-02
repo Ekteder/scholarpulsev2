@@ -9,7 +9,7 @@ import { getCurrentUser, isUserAdmin } from '@/lib/auth';
 export async function checkIsAdminAction(): Promise<boolean> {
   try {
     const user = await getCurrentUser();
-    if (!user) return false;
+    if (!user || user.isBanned) return false;
     return await isUserAdmin(user);
   } catch (error) {
     console.error('Failed to verify admin status in checkIsAdminAction:', error);

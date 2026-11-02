@@ -85,7 +85,7 @@ test.describe('Dynamic Student Reflection & Preserved UI Design (F2, F6, F10)', 
       const badgesContainer = page.locator('main, [role="main"]').first();
       await expect(badgesContainer).toBeVisible({ timeout: 10000 });
       // Verify badge items exist
-      const badgeCards = page.locator('[data-slot="card"], div.rounded-xl, div.rounded-2xl').filter({
+      const badgeCards = badgesContainer.locator(':is([data-slot="card"], div.rounded-xl, div.rounded-2xl):visible').filter({
         hasText: /Badge|Streak|Hours|Milestone|Scholar/i,
       });
       await expect(badgeCards.first()).toBeVisible({ timeout: 10000 });

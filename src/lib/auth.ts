@@ -15,6 +15,7 @@ export interface SessionUser {
   email: string;
   name: string;
   avatarUrl?: string;
+  isBanned?: boolean;
 }
 
 export function getGoogleOAuthURL(redirectUri: string) {
@@ -149,11 +150,32 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 
   try {
     const { payload } = await jwtVerify(token, SECRET_KEY);
+    const uid = payload.uid as string;
+    const email = payload.email as string;
+    const name = payload.name as string;
+    const avatarUrl = (payload.avatarUrl as string) || '';
+
+    let isBanned = false;
+    try {
+      const userProfile = await db
+        .select({ isBanned: profiles.isBanned })
+        .from(profiles)
+        .where(eq(profiles.userId, uid))
+        .limit(1);
+
+      if (userProfile.length > 0 && userProfile[0].isBanned) {
+        isBanned = true;
+      }
+    } catch {
+      // safe fallback if db is momentarily unreachable or table being migrated
+    }
+
     return {
-      uid: payload.uid as string,
-      email: payload.email as string,
-      name: payload.name as string,
-      avatarUrl: (payload.avatarUrl as string) || '',
+      uid,
+      email,
+      name,
+      avatarUrl,
+      isBanned,
     };
   } catch {
     return null;
@@ -221,7 +243,7 @@ export async function requireAdminUser(
     typeof options === 'boolean' ? options : (options?.redirect ?? true);
 
   const user = await getCurrentUser();
-  if (!user || !(await isUserAdmin(user))) {
+  if (!user || user.isBanned || !(await isUserAdmin(user))) {
     if (shouldRedirect) {
       try {
         redirect('/?authError=unauthorized_admin');

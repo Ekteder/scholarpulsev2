@@ -94,6 +94,7 @@ export interface AuthUser {
   email: string;
   name: string;
   avatarUrl?: string;
+  isBanned?: boolean;
 }
 
 export interface WorkspaceContextValue {
@@ -320,6 +321,9 @@ export function WorkspaceProvider({
           if (session.success && session.user) {
             setUser(session.user);
             activeUser = session.user;
+            if (session.user.isBanned) {
+              return;
+            }
             if (session.data) {
               const workspace = session.data as unknown as WorkspaceData;
               setData(workspace);
@@ -394,6 +398,18 @@ export function WorkspaceProvider({
       } catch (err: any) {
         console.error('refreshWorkspace error:', err);
         setWorkspaceError(err?.message || 'Failed to load workspace.');
+        if (err?.message?.toLowerCase().includes('banned')) {
+          setUser((prev) => (prev ? { ...prev, isBanned: true } : null));
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  profile: prev.profile ? { ...prev.profile, isBanned: true } : prev.profile,
+                }
+              : null
+          );
+          setActiveTimer(null);
+        }
       } finally {
         setWorkspaceLoading(false);
         refreshPromiseRef.current = null;
@@ -415,6 +431,13 @@ export function WorkspaceProvider({
 
       switch (eventType) {
         case 'connected': {
+          setUser((prev) => {
+            if (prev?.isBanned) {
+              refreshWorkspace().catch(() => {});
+              return { ...prev, isBanned: false };
+            }
+            return prev;
+          });
           const initialTimer = payload?.activeTimer as ActiveTimerSession | null | undefined;
           if (initialTimer) {
             setActiveTimer((current) => {
@@ -885,7 +908,44 @@ export function WorkspaceProvider({
         }
 
         case 'workspace:refresh': {
+          if (payload?.targetedAnnouncement !== undefined) {
+            setData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    targetedAnnouncement: payload.targetedAnnouncement,
+                    profile: prev.profile
+                      ? { ...prev.profile, targetedAnnouncement: payload.targetedAnnouncement }
+                      : prev.profile,
+                  }
+                : null
+            );
+          }
           if (!isFromSelf) {
+            refreshWorkspace().catch(() => {});
+          }
+          break;
+        }
+
+        case 'user:banned': {
+          const isBanned = payload?.isBanned ?? true;
+          setUser((prev) => (prev ? { ...prev, isBanned } : null));
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  profile: prev.profile ? { ...prev.profile, isBanned } : prev.profile,
+                }
+              : null
+          );
+          if (isBanned) {
+            setActiveTimer(null);
+            if (typeof window !== 'undefined' && user?.uid) {
+              try {
+                localStorage.removeItem(`scholarpulse_timer_${user.uid}`);
+              } catch {}
+            }
+          } else {
             refreshWorkspace().catch(() => {});
           }
           break;

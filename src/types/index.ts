@@ -16,6 +16,11 @@ export interface Profile {
   targetExamName?: string;
   targetExamDate?: string;
   gamificationXp?: number;
+  isBanned?: boolean;
+  bannedReason?: string | null;
+  bannedAt?: string | Date | null;
+  targetedAnnouncement?: string | null;
+  targetedAnnouncementCreatedAt?: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -170,6 +175,7 @@ export interface WorkspaceData {
   userAchievements: UserAchievementItem[];
   systemConfigurations?: Record<string, string>;
   announcementBanner?: string;
+  targetedAnnouncement?: string | null;
 }
 
 export type NavigationTab =

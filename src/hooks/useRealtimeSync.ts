@@ -51,6 +51,7 @@ const SYNC_EVENT_TYPES = [
   'profile:update',
   'preferences:update',
   'workspace:refresh',
+  'user:banned',
 ] as const;
 
 export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {

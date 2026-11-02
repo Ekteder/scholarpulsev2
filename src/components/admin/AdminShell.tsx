@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   ShieldCheck,
   ChevronRight,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +44,12 @@ export const ADMIN_NAV_ITEMS: NavItem[] = [
     href: '/admin',
     icon: LayoutDashboard,
     description: 'System health, quick metrics, and live status',
+  },
+  {
+    title: 'Users',
+    href: '/admin/users',
+    icon: Users,
+    description: 'Inspect user data, ban/unban, and send targeted announcements',
   },
   {
     title: 'Subjects & Topics',
