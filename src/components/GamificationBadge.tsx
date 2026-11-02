@@ -97,7 +97,7 @@ export function GamificationBadge({
             <span className="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors whitespace-nowrap">
               Lv.{rank.level} <span className="hidden xl:inline">{rank.rankTitle}</span>
             </span>
-            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.2 rounded-full whitespace-nowrap">
+            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/60 whitespace-nowrap">
               {totalXp} XP
             </span>
           </div>
@@ -171,6 +171,7 @@ export function GamificationBadge({
             <button
               type="button"
               onClick={() => triggerCelebrationConfetti()}
+              data-testid="confetti-test-btn"
               className="mt-2 w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -237,6 +238,7 @@ export function GamificationBadge({
           <button
             type="button"
             onClick={() => setModalOpen(false)}
+            data-testid="close-academic-rank-modal-bottom"
             className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
           >
             Close

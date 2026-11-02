@@ -286,13 +286,15 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
   });
 
   test.describe('Tier 6: Academic Rank & XP Gamification Popover Responsiveness & De-duplication', () => {
-    test('22. Desktop (1920x1080) & Laptop (1366x768 & 1280x800): Top navbar XP popover is NOT cut off at top (y >= 0) and fits viewport', async ({
+    test('22. Desktop (1920x1080) & Laptop (1366x768, 1366x600 & 1280x800): Top navbar XP popover is NOT cut off at top (y >= 0) and fits viewport', async ({
       page,
     }) => {
       const testViewports = [
         { width: 1920, height: 1080, name: 'Desktop Full HD' },
         { width: 1366, height: 768, name: 'Standard 14-inch Laptop' },
+        { width: 1366, height: 600, name: 'Height-Constrained Laptop (Browser Toolbars)' },
         { width: 1280, height: 800, name: '13-inch Notebook' },
+        { width: 1024, height: 768, name: '1024px Laptop / iPad Landscape' },
       ];
 
       for (const vp of testViewports) {
@@ -311,6 +313,10 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
 
         // Verify title inside modal is rendered
         await expect(page.locator('#scholar-rank-title')).toBeVisible();
+
+        // Verify body overflow is locked to prevent background scrolling
+        const bodyOverflowOpen = await page.evaluate(() => document.body.style.overflow);
+        expect(bodyOverflowOpen).toBe('hidden');
 
         // Strict bounding box verification: top must NEVER be negative (not cut off at the top!)
         const box = await modal.boundingBox();
@@ -331,6 +337,10 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
         const closeBtn = page.locator('[data-testid="close-academic-rank-modal"]');
         await closeBtn.click();
         await expect(modal).not.toBeVisible();
+
+        // Verify body overflow is restored
+        const bodyOverflowClosed = await page.evaluate(() => document.body.style.overflow);
+        expect(bodyOverflowClosed).not.toBe('hidden');
       }
     });
 
@@ -393,6 +403,49 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
         await page.locator('[data-testid="close-academic-rank-modal"]').click();
         await expect(modal).not.toBeVisible();
       }
+    });
+
+    test('25. Academic Rank modal interactions: Escape key, backdrop click, bottom close button, and celebration trigger', async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.goto('/');
+      await page.waitForLoadState('domcontentloaded');
+
+      const headerXpBadge = page.locator('[data-testid="header-gamification-badge"]');
+      const modal = page.locator('[data-testid="academic-rank-modal"]');
+
+      // Sub-test A: Dismiss via Escape key
+      await headerXpBadge.click();
+      await expect(modal).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(modal).not.toBeVisible();
+
+      // Sub-test B: Dismiss via backdrop click
+      await headerXpBadge.click();
+      await expect(modal).toBeVisible();
+      const backdrop = page.locator('[data-testid="academic-rank-modal-backdrop"]');
+      await backdrop.click({ position: { x: 10, y: 10 } });
+      await expect(modal).not.toBeVisible();
+
+      // Sub-test C: Dismiss via bottom close button
+      await headerXpBadge.click();
+      await expect(modal).toBeVisible();
+      const bottomCloseBtn = page.locator('[data-testid="close-academic-rank-modal-bottom"]');
+      await expect(bottomCloseBtn).toBeVisible();
+      await bottomCloseBtn.click();
+      await expect(modal).not.toBeVisible();
+
+      // Sub-test D: Confetti trigger button inside modal executes cleanly
+      await headerXpBadge.click();
+      await expect(modal).toBeVisible();
+      const confettiBtn = page.locator('[data-testid="confetti-test-btn"]');
+      await expect(confettiBtn).toBeVisible();
+      await confettiBtn.click();
+      // Ensure no crash or unhandled errors occurred
+      await expect(modal).toBeVisible();
+      await page.locator('[data-testid="close-academic-rank-modal"]').click();
+      await expect(modal).not.toBeVisible();
     });
   });
 });
