@@ -19,9 +19,10 @@ export const ADMIN_USER: TestSessionUser = {
 };
 
 export const SUPERADMIN_USER: TestSessionUser = {
-  uid: '106603956445816075425',
-  email: 'iktidarsanglap01@gmail.com',
-  name: 'Iktidar Sanglap',
+  uid: 'admin-test-uid-001',
+  email: 'admin@scholarpulse.edu',
+  name: 'ScholarPulse Admin',
+  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop',
 };
 
 export const UNAUTHORIZED_USER: TestSessionUser = {
