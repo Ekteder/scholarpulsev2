@@ -238,5 +238,50 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
       // No crash
       await expect(page.locator('body')).not.toContainText('Application error');
     });
+
+    test('21. Admin User Profile & Controls modal is wide and spacious on Desktop & Laptop, and responsive on Mobile', async ({
+      page,
+      context,
+    }) => {
+      await loginAsAdmin(context, ADMIN_USER, page.url());
+
+      // 1. Desktop (1920x1080)
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await page.goto('/admin/users');
+      const inspectBtn = page.locator(`[data-testid="inspect-user-btn-${UNAUTHORIZED_USER.uid}"]`);
+      await expect(inspectBtn).toBeVisible({ timeout: 10000 });
+      await inspectBtn.click();
+
+      const dialog = page.locator('[data-testid="user-detail-dialog"]');
+      await expect(dialog).toBeVisible();
+
+      // Check dialog width on 1920x1080 is >= 750px (was previously locked to 384px!)
+      const boxDesktop = await dialog.boundingBox();
+      expect(boxDesktop).not.toBeNull();
+      if (boxDesktop) {
+        expect(boxDesktop.width).toBeGreaterThanOrEqual(750);
+      }
+
+      // Check zero horizontal overflow
+      await assertZeroHorizontalOverflow(page, 'Admin user detail modal at 1920x1080');
+
+      // Check ban button text is fully visible (not clipped)
+      const banBtn = page.locator('[data-testid="detail-ban-toggle-btn"]');
+      await expect(banBtn).toBeVisible();
+      const banBtnBox = await banBtn.boundingBox();
+      expect(banBtnBox?.width).toBeGreaterThanOrEqual(120);
+
+      // 2. Mobile (390x844)
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(200);
+      const boxMobile = await dialog.boundingBox();
+      expect(boxMobile).not.toBeNull();
+      if (boxMobile) {
+        // Fits comfortably within mobile screen with margin
+        expect(boxMobile.width).toBeLessThanOrEqual(390);
+        expect(boxMobile.width).toBeGreaterThanOrEqual(320);
+      }
+      await assertZeroHorizontalOverflow(page, 'Admin user detail modal at 390x844');
+    });
   });
 });

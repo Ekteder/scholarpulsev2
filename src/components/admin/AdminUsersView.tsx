@@ -22,6 +22,7 @@ import {
   Trash2,
   Send,
   AlertTriangle,
+  UserCheck,
 } from 'lucide-react';
 import {
   Table,
@@ -537,31 +538,31 @@ export function AdminUsersView() {
       {/* User Detail Inspection & Editing Dialog (R2, R3, R4) */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         <DialogContent
-          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+          className="w-full max-w-[95vw] sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 md:p-8 rounded-2xl"
           data-testid="user-detail-dialog"
         >
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-2">
-              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+          <DialogHeader className="pr-6 sm:pr-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <DialogTitle className="text-xl font-bold flex items-center gap-2.5">
                 <Users className="w-5 h-5 text-primary" />
                 <span>User Profile & Controls</span>
               </DialogTitle>
               {detailUser?.profile.isBanned && (
-                <Badge variant="destructive" className="gap-1 text-xs">
+                <Badge variant="destructive" className="gap-1.5 text-xs py-1 px-2.5 w-fit">
                   <Ban className="w-3.5 h-3.5" />
                   <span>Account Suspended</span>
                 </Badge>
               )}
             </div>
-            <DialogDescription className="text-xs">
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
               Inspect user metadata, edit profile and study preferences, manage ban controls, and issue targeted announcements.
             </DialogDescription>
           </DialogHeader>
 
           {detailLoading ? (
-            <div className="py-12 space-y-4 text-center">
-              <RefreshCw className="w-6 h-6 animate-spin text-primary mx-auto" />
-              <p className="text-xs text-muted-foreground">Lazy loading full user record from database...</p>
+            <div className="py-16 space-y-4 text-center">
+              <RefreshCw className="w-8 h-8 animate-spin text-primary mx-auto" />
+              <p className="text-sm font-medium text-muted-foreground">Lazy loading full user record from database...</p>
             </div>
           ) : detailUser ? (
             <div className="space-y-6 py-2">
@@ -569,17 +570,17 @@ export function AdminUsersView() {
               {actionError && (
                 <div
                   role="alert"
-                  className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in"
+                  className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <ShieldAlert className="w-4 h-4 shrink-0" />
-                    <span>{actionError}</span>
+                    <span className="truncate">{actionError}</span>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setActionError(null)}
-                    className="h-6 px-2 text-xs hover:bg-destructive/10"
+                    className="h-7 px-2 text-xs hover:bg-destructive/10 shrink-0"
                   >
                     Dismiss
                   </Button>
@@ -587,23 +588,23 @@ export function AdminUsersView() {
               )}
               {/* Banner: save / announcement feedback */}
               {saveSuccess && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                   <CheckCircle className="w-4 h-4 shrink-0" />
                   <span>User profile changes have been persisted successfully!</span>
                 </div>
               )}
               {announcementSuccess && (
-                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                   <Megaphone className="w-4 h-4 shrink-0" />
                   <span>Targeted announcement dispatched. It is now displayed unclosably to this user.</span>
                 </div>
               )}
 
               {/* SECTION 1: Identity & Read-Only Metadata (Formatted like admin profile) */}
-              <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0 border border-border bg-primary/10 flex items-center justify-center">
+              <div className="p-4 sm:p-5 rounded-2xl bg-muted/40 border border-border space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border border-border bg-primary/10 flex items-center justify-center shadow-xs">
                       <span className="text-primary font-bold text-sm">
                         {detailUser.profile.fullName ? detailUser.profile.fullName.trim().slice(0, 2).toUpperCase() : 'US'}
                       </span>
@@ -618,20 +619,20 @@ export function AdminUsersView() {
                         />
                       )}
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-sm text-foreground">{detailUser.profile.fullName}</h3>
-                      <p className="text-xs text-muted-foreground font-mono">{detailUser.profile.email}</p>
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-base text-foreground truncate">{detailUser.profile.fullName || 'Anonymous Student'}</h3>
+                      <p className="text-xs text-muted-foreground font-mono truncate">{detailUser.profile.email}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 bg-background px-2.5 py-1 rounded-md border border-border font-mono text-[11px]">
-                      <span className="text-muted-foreground">UID:</span>
-                      <span className="truncate max-w-[150px]">{detailUser.profile.userId}</span>
+                  <div className="flex items-center gap-2 text-xs shrink-0 flex-wrap">
+                    <div className="flex items-center gap-1.5 bg-background px-3 py-1.5 rounded-lg border border-border font-mono text-xs shadow-xs">
+                      <span className="text-muted-foreground font-semibold">UID:</span>
+                      <span className="truncate max-w-[180px] sm:max-w-[280px] select-all">{detailUser.profile.userId}</span>
                       <button
                         type="button"
                         onClick={() => copyUserId(detailUser.profile.userId)}
-                        className="text-muted-foreground hover:text-foreground ml-1"
+                        className="text-muted-foreground hover:text-foreground ml-1 p-0.5 rounded transition-colors"
                         title="Copy User ID"
                       >
                         {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -640,66 +641,66 @@ export function AdminUsersView() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/60 text-xs">
-                  <div>
-                    <span className="text-muted-foreground text-[10px] uppercase font-bold">Created At</span>
-                    <p className="font-medium text-foreground">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-border/60 text-xs">
+                  <div className="bg-background/50 p-2.5 rounded-xl border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider block">Created At</span>
+                    <p className="font-semibold text-foreground text-xs mt-0.5">
                       {detailUser.profile.createdAt
                         ? new Date(detailUser.profile.createdAt).toLocaleDateString()
                         : '—'}
                     </p>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[10px] uppercase font-bold">Updated At</span>
-                    <p className="font-medium text-foreground">
+                  <div className="bg-background/50 p-2.5 rounded-xl border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider block">Updated At</span>
+                    <p className="font-semibold text-foreground text-xs mt-0.5">
                       {detailUser.profile.updatedAt
                         ? new Date(detailUser.profile.updatedAt).toLocaleDateString()
                         : '—'}
                     </p>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[10px] uppercase font-bold">XP Points</span>
-                    <p className="font-semibold text-primary">{detailUser.profile.gamificationXp || 0} XP</p>
+                  <div className="bg-background/50 p-2.5 rounded-xl border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider block">XP Points</span>
+                    <p className="font-bold text-primary text-xs mt-0.5">{detailUser.profile.gamificationXp || 0} XP</p>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground text-[10px] uppercase font-bold">Onboarding</span>
-                    <p className="font-medium text-foreground">
+                  <div className="bg-background/50 p-2.5 rounded-xl border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider block">Onboarding</span>
+                    <p className="font-semibold text-foreground text-xs mt-0.5">
                       {detailUser.profile.onboardingCompleted ? 'Completed' : 'Pending'}
                     </p>
                   </div>
                 </div>
 
                 {/* Activity stats summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/60 text-xs">
-                  <div className="bg-background p-2 rounded-lg border border-border/60">
-                    <span className="text-[10px] text-muted-foreground">Study Sessions</span>
-                    <p className="font-bold text-sm text-foreground">{detailUser.stats.totalSessions}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-border/60">
+                  <div className="bg-background p-3 rounded-xl border border-border/60 shadow-xs">
+                    <span className="text-[11px] text-muted-foreground block">Study Sessions</span>
+                    <p className="font-bold text-lg text-foreground mt-0.5">{detailUser.stats.totalSessions}</p>
                   </div>
-                  <div className="bg-background p-2 rounded-lg border border-border/60">
-                    <span className="text-[10px] text-muted-foreground">Total Study Time</span>
-                    <p className="font-bold text-sm text-foreground">{detailUser.stats.totalStudyMinutes} mins</p>
+                  <div className="bg-background p-3 rounded-xl border border-border/60 shadow-xs">
+                    <span className="text-[11px] text-muted-foreground block">Total Study Time</span>
+                    <p className="font-bold text-lg text-foreground mt-0.5">{detailUser.stats.totalStudyMinutes} mins</p>
                   </div>
-                  <div className="bg-background p-2 rounded-lg border border-border/60">
-                    <span className="text-[10px] text-muted-foreground">Active Subjects</span>
-                    <p className="font-bold text-sm text-foreground">{detailUser.stats.totalSubjects}</p>
+                  <div className="bg-background p-3 rounded-xl border border-border/60 shadow-xs">
+                    <span className="text-[11px] text-muted-foreground block">Active Subjects</span>
+                    <p className="font-bold text-lg text-foreground mt-0.5">{detailUser.stats.totalSubjects}</p>
                   </div>
-                  <div className="bg-background p-2 rounded-lg border border-border/60">
-                    <span className="text-[10px] text-muted-foreground">Total Tasks</span>
-                    <p className="font-bold text-sm text-foreground">{detailUser.stats.totalTasks}</p>
+                  <div className="bg-background p-3 rounded-xl border border-border/60 shadow-xs">
+                    <span className="text-[11px] text-muted-foreground block">Total Tasks</span>
+                    <p className="font-bold text-lg text-foreground mt-0.5">{detailUser.stats.totalTasks}</p>
                   </div>
                 </div>
               </div>
 
               {/* SECTION 2: Ban / Unban Access Controls (R3) */}
-              <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/20 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="p-4 sm:p-5 rounded-2xl bg-destructive/5 border border-destructive/20 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-destructive">
-                    <ShieldAlert className="w-4 h-4" />
+                    <ShieldAlert className="w-4 h-4 shrink-0" />
                     <h4 className="font-display font-bold text-xs uppercase tracking-wider">
                       Account Ban & Security Lockdown (R3)
                     </h4>
                   </div>
-                  <Badge variant={detailUser.profile.isBanned ? 'destructive' : 'secondary'}>
+                  <Badge variant={detailUser.profile.isBanned ? 'destructive' : 'secondary'} className="w-fit">
                     {detailUser.profile.isBanned ? 'Banned (Locked Out)' : 'Access Restored'}
                   </Badge>
                 </div>
@@ -708,33 +709,33 @@ export function AdminUsersView() {
                   Banning a user immediately revokes access to authenticated workspace features and shows an Account Suspended lockout screen. Unbanning restores their access instantly.
                 </p>
 
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <div className="flex-1 w-full">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <div className="flex-1 min-w-0">
                     <Input
                       placeholder="Optional reason for ban (e.g. Terms violation, unpaid invoice)..."
                       value={banReasonInput}
                       onChange={(e) => setBanReasonInput(e.target.value)}
-                      className="text-xs h-9"
+                      className="text-xs h-10 w-full"
                       data-testid="ban-reason-input"
                     />
                   </div>
                   <Button
                     type="button"
                     variant={detailUser.profile.isBanned ? 'outline' : 'destructive'}
-                    size="sm"
+                    size="default"
                     disabled={isBanning}
                     onClick={() => handleToggleBan(detailUser.profile.userId, detailUser.profile.isBanned, banReasonInput)}
-                    className="h-9 text-xs font-semibold shrink-0"
+                    className="h-10 text-xs font-semibold shrink-0 px-4 whitespace-nowrap"
                     data-testid="detail-ban-toggle-btn"
                   >
                     {detailUser.profile.isBanned ? (
                       <>
-                        <ShieldCheck className="w-4 h-4 mr-1 text-emerald-600" />
+                        <ShieldCheck className="w-4 h-4 mr-1.5 text-emerald-600 dark:text-emerald-400" />
                         <span>Unban User (Restore Access)</span>
                       </>
                     ) : (
                       <>
-                        <Ban className="w-4 h-4 mr-1" />
+                        <Ban className="w-4 h-4 mr-1.5" />
                         <span>Ban User (Lockout)</span>
                       </>
                     )}
@@ -742,27 +743,27 @@ export function AdminUsersView() {
                 </div>
 
                 {detailUser.profile.isBanned && detailUser.profile.bannedReason && (
-                  <p className="text-[11px] text-destructive/80 font-mono">
+                  <p className="text-[11px] text-destructive/90 font-mono bg-destructive/10 p-2.5 rounded-xl border border-destructive/20">
                     Active Ban Reason: &quot;{detailUser.profile.bannedReason}&quot;
                   </p>
                 )}
               </div>
 
               {/* SECTION 3: Targeted Unclosable Announcements (R4) */}
-              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3" data-testid="targeted-announcement-section">
-                <div className="flex items-center justify-between">
+              <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3" data-testid="targeted-announcement-section">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                    <Megaphone className="w-4 h-4" />
+                    <Megaphone className="w-4 h-4 shrink-0" />
                     <h4 className="font-display font-bold text-xs uppercase tracking-wider">
                       Targeted Unclosable Announcement (R4)
                     </h4>
                   </div>
                   {detailUser.profile.targetedAnnouncement ? (
-                    <Badge variant="outline" className="text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px]">
+                    <Badge variant="outline" className="text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] w-fit">
                       Announcement Active
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="secondary" className="text-[10px] w-fit">
                       None Active
                     </Badge>
                   )}
@@ -773,30 +774,30 @@ export function AdminUsersView() {
                 </p>
 
                 {detailUser.profile.targetedAnnouncement && (
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
                       Currently Visible to User:
                     </span>
                     <p className="font-medium text-foreground italic break-words whitespace-pre-wrap">
                       &quot;{detailUser.profile.targetedAnnouncement}&quot;
                     </p>
                     {detailUser.profile.targetedAnnouncementCreatedAt && (
-                      <p className="text-[10px] text-muted-foreground font-mono">
+                      <p className="text-[10px] text-muted-foreground font-mono mt-1">
                         Dispatched: {new Date(detailUser.profile.targetedAnnouncementCreatedAt).toLocaleString()}
                       </p>
                     )}
                   </div>
                 )}
 
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <Textarea
-                    placeholder="Enter targeted announcement message for this user..."
+                    placeholder="Enter targeted announcement message for this user (will appear unclosably at the top of their workspace)..."
                     value={targetedAnnouncementText}
                     onChange={(e) => setTargetedAnnouncementText(e.target.value)}
-                    className="text-xs min-h-[70px]"
+                    className="text-xs min-h-[80px] w-full"
                     data-testid="targeted-announcement-input"
                   />
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                     {detailUser.profile.targetedAnnouncement ? (
                       <Button
                         type="button"
@@ -804,23 +805,23 @@ export function AdminUsersView() {
                         size="sm"
                         disabled={isSendingAnnouncement}
                         onClick={() => handleSendTargetedAnnouncement('')}
-                        className="text-xs text-destructive hover:bg-destructive/10 h-8"
+                        className="text-xs text-destructive hover:bg-destructive/10 h-9"
                         data-testid="clear-announcement-btn"
                       >
-                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                         <span>Clear Announcement</span>
                       </Button>
                     ) : <span />}
 
                     <Button
                       type="button"
-                      size="sm"
+                      size="default"
                       disabled={isSendingAnnouncement || !targetedAnnouncementText.trim()}
                       onClick={() => handleSendTargetedAnnouncement(targetedAnnouncementText)}
-                      className="text-xs h-8 bg-amber-600 hover:bg-amber-700 text-white"
+                      className="text-xs h-9 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 whitespace-nowrap"
                       data-testid="send-announcement-btn"
                     >
-                      <Send className="w-3.5 h-3.5 mr-1" />
+                      <Send className="w-3.5 h-3.5 mr-1.5" />
                       <span>{isSendingAnnouncement ? 'Sending...' : 'Send Targeted Announcement'}</span>
                     </Button>
                   </div>
@@ -829,13 +830,16 @@ export function AdminUsersView() {
 
               {/* SECTION 4: User Profile & Study Settings Editable Form (R2) */}
               <div className="space-y-4 pt-2 border-t border-border">
-                <h4 className="font-display font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                  User Profile & Study Parameters (R2)
-                </h4>
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-primary" />
+                  <h4 className="font-display font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                    User Profile & Study Parameters (R2)
+                  </h4>
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 text-xs">
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Full Name</label>
+                    <label className="block font-medium text-foreground mb-1.5">Full Name</label>
                     <Input
                       value={formFullName}
                       onChange={(e) => setFormFullName(e.target.value)}
@@ -845,7 +849,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Email Address</label>
+                    <label className="block font-medium text-foreground mb-1.5">Email Address</label>
                     <Input
                       type="email"
                       value={formEmail}
@@ -856,7 +860,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Avatar Image URL</label>
+                    <label className="block font-medium text-foreground mb-1.5">Avatar Image URL</label>
                     <Input
                       value={formAvatarUrl}
                       onChange={(e) => setFormAvatarUrl(e.target.value)}
@@ -866,7 +870,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Daily Study Target (Hours)</label>
+                    <label className="block font-medium text-foreground mb-1.5">Daily Study Target (Hours)</label>
                     <Input
                       type="number"
                       step="0.5"
@@ -885,7 +889,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Target Exam Name</label>
+                    <label className="block font-medium text-foreground mb-1.5">Target Exam Name</label>
                     <Input
                       value={formTargetExamName}
                       onChange={(e) => setFormTargetExamName(e.target.value)}
@@ -894,7 +898,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Target Exam Date</label>
+                    <label className="block font-medium text-foreground mb-1.5">Target Exam Date</label>
                     <Input
                       type="date"
                       value={formTargetExamDate}
@@ -904,11 +908,11 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Preferred Study Time</label>
+                    <label className="block font-medium text-foreground mb-1.5">Preferred Study Time</label>
                     <select
                       value={formPreferredStudyTime}
                       onChange={(e) => setFormPreferredStudyTime(e.target.value)}
-                      className="w-full h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="morning">Morning</option>
                       <option value="afternoon">Afternoon</option>
@@ -918,11 +922,11 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Timezone</label>
+                    <label className="block font-medium text-foreground mb-1.5">Timezone</label>
                     <select
                       value={formTimezone}
                       onChange={(e) => setFormTimezone(e.target.value)}
-                      className="w-full h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       {SUPPORTED_TIMEZONES.map((tz) => (
                         <option key={tz.value} value={tz.value}>
@@ -933,11 +937,11 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Theme Preference</label>
+                    <label className="block font-medium text-foreground mb-1.5">Theme Preference</label>
                     <select
                       value={formThemePreference}
                       onChange={(e) => setFormThemePreference(e.target.value)}
-                      className="w-full h-9 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="light">Light</option>
                       <option value="dark">Dark</option>
@@ -946,7 +950,7 @@ export function AdminUsersView() {
                   </div>
 
                   <div>
-                    <label className="block font-medium text-foreground mb-1">Gamification XP</label>
+                    <label className="block font-medium text-foreground mb-1.5">Gamification XP</label>
                     <Input
                       type="number"
                       min="0"
@@ -961,87 +965,102 @@ export function AdminUsersView() {
                 </div>
 
                 {/* Pomodoro Settings */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Focus (min)</label>
-                    <Input
-                      type="number"
-                      min="5"
-                      max="120"
-                      value={formFocusMinutes}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        setFormFocusMinutes(isNaN(val) ? 25 : val);
-                      }}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Short Break (min)</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={formShortBreakMinutes}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        setFormShortBreakMinutes(isNaN(val) ? 5 : val);
-                      }}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Long Break (min)</label>
-                    <Input
-                      type="number"
-                      min="5"
-                      max="60"
-                      value={formLongBreakMinutes}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        setFormLongBreakMinutes(isNaN(val) ? 15 : val);
-                      }}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Interval (cycles)</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={formLongBreakInterval}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        setFormLongBreakInterval(isNaN(val) ? 4 : val);
-                      }}
-                      className="text-xs h-8"
-                    />
+                <div className="mt-4 p-3.5 sm:p-4 rounded-xl bg-muted/30 border border-border/60 space-y-2">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Pomodoro Timer Defaults
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <label className="block text-muted-foreground mb-1 text-[11px]">Focus (min)</label>
+                      <Input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={formFocusMinutes}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setFormFocusMinutes(isNaN(val) ? 25 : val);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-muted-foreground mb-1 text-[11px]">Short Break (min)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={formShortBreakMinutes}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setFormShortBreakMinutes(isNaN(val) ? 5 : val);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-muted-foreground mb-1 text-[11px]">Long Break (min)</label>
+                      <Input
+                        type="number"
+                        min="5"
+                        max="60"
+                        value={formLongBreakMinutes}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setFormLongBreakMinutes(isNaN(val) ? 15 : val);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-muted-foreground mb-1 text-[11px]">Interval (cycles)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={formLongBreakInterval}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setFormLongBreakInterval(isNaN(val) ? 4 : val);
+                        }}
+                        className="text-xs h-8"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           ) : null}
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
+          <DialogFooter className="gap-2.5 sm:gap-3 pt-4 border-t border-border flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end">
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="default"
               onClick={() => setDetailDialogOpen(false)}
-              className="text-xs"
+              className="text-xs px-4"
             >
               Close
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="default"
               disabled={isSavingChanges || detailLoading}
               onClick={handleSaveProfileChanges}
-              className="text-xs font-semibold"
+              className="text-xs font-semibold px-5"
               data-testid="save-user-changes-btn"
             >
-              {isSavingChanges ? 'Saving...' : 'Save User Changes'}
+              {isSavingChanges ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  <span>Saving Changes...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Save User Changes</span>
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
