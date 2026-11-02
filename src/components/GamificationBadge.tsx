@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import {
   calculateGamification,
@@ -16,6 +17,25 @@ export function GamificationBadge({
 }) {
   const { data } = useWorkspace();
   const [modalOpen, setModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setModalOpen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [modalOpen]);
 
   const gamification = calculateGamification(data);
   const { rank, totalXp, progressPct, xpNeededForNextLevel } = gamification;
@@ -27,6 +47,7 @@ export function GamificationBadge({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
+          data-testid={variant === 'drawer' ? 'drawer-gamification-badge' : 'sidebar-gamification-badge'}
           className="w-full p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all text-left group cursor-pointer"
           title="View Scholar Rank & XP Progress"
         >
@@ -60,12 +81,13 @@ export function GamificationBadge({
     );
   }
 
-  // Header representation: hidden on < lg to avoid mobile & tablet header crowding, compact on lg-xl, full on 2xl+
+  // Header representation: hidden on < lg to avoid mobile & tablet header crowding, visible on laptop & pc
   return (
     <>
       <button
         type="button"
         onClick={() => setModalOpen(true)}
+        data-testid="header-gamification-badge"
         className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full border border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs hover:border-blue-400 dark:hover:border-blue-500 shadow-xs transition-all text-left group shrink-0 cursor-pointer"
         title="View Scholar Rank & XP Progress"
       >
@@ -79,7 +101,7 @@ export function GamificationBadge({
               {totalXp} XP
             </span>
           </div>
-          <div className="hidden 2xl:block w-20 h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-0.5">
+          <div className="w-16 xl:w-20 h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-0.5">
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
               style={{ width: `${progressPct}%` }}
@@ -93,16 +115,29 @@ export function GamificationBadge({
   );
 
   function renderLadderModal() {
-    if (!modalOpen) return null;
+    if (!modalOpen || !mounted || typeof document === 'undefined') return null;
 
-    return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+    const modalContent = (
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in overflow-y-auto"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setModalOpen(false);
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="scholar-rank-title"
+        data-testid="academic-rank-modal-backdrop"
+      >
+        <div
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 my-auto max-h-[calc(100dvh-2rem)] sm:max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+          data-testid="academic-rank-modal"
+        >
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <span className="text-2xl">{rank.icon}</span>
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                <h3 id="scholar-rank-title" className="text-base font-bold text-slate-900 dark:text-slate-100">
                   Scholar Rank: {rank.rankTitle}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -111,9 +146,11 @@ export function GamificationBadge({
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setModalOpen(false)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg cursor-pointer"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg cursor-pointer transition-colors"
               aria-label="Close dialog"
+              data-testid="close-academic-rank-modal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -132,6 +169,7 @@ export function GamificationBadge({
               />
             </div>
             <button
+              type="button"
               onClick={() => triggerCelebrationConfetti()}
               className="mt-2 w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
@@ -197,13 +235,17 @@ export function GamificationBadge({
           </div>
 
           <button
+            type="button"
             onClick={() => setModalOpen(false)}
-            className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
+            className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
           >
             Close
           </button>
         </div>
       </div>
     );
+
+    return createPortal(modalContent, document.body);
   }
 }
+

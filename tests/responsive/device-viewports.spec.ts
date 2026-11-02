@@ -284,4 +284,115 @@ test.describe('Multi-Device Responsive UI/UX Across 6 Form Factors (F11)', () =>
       await assertZeroHorizontalOverflow(page, 'Admin user detail modal at 390x844');
     });
   });
+
+  test.describe('Tier 6: Academic Rank & XP Gamification Popover Responsiveness & De-duplication', () => {
+    test('22. Desktop (1920x1080) & Laptop (1366x768 & 1280x800): Top navbar XP popover is NOT cut off at top (y >= 0) and fits viewport', async ({
+      page,
+    }) => {
+      const testViewports = [
+        { width: 1920, height: 1080, name: 'Desktop Full HD' },
+        { width: 1366, height: 768, name: 'Standard 14-inch Laptop' },
+        { width: 1280, height: 800, name: '13-inch Notebook' },
+      ];
+
+      for (const vp of testViewports) {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/');
+        await page.waitForLoadState('domcontentloaded');
+
+        const headerXpBadge = page.locator('[data-testid="header-gamification-badge"]');
+        await expect(headerXpBadge).toBeVisible({ timeout: 10000 });
+
+        // Click top nav bar XP badge to open Academic Rank Progression modal
+        await headerXpBadge.click();
+
+        const modal = page.locator('[data-testid="academic-rank-modal"]');
+        await expect(modal).toBeVisible({ timeout: 5000 });
+
+        // Verify title inside modal is rendered
+        await expect(page.locator('#scholar-rank-title')).toBeVisible();
+
+        // Strict bounding box verification: top must NEVER be negative (not cut off at the top!)
+        const box = await modal.boundingBox();
+        expect(box, `Modal bounding box should exist on ${vp.name}`).not.toBeNull();
+        if (box) {
+          expect(
+            box.y,
+            `[Clipping Failure on ${vp.name}] Modal top y (${box.y}px) must be >= 0 (must not be cut off at the top of the viewport)`
+          ).toBeGreaterThanOrEqual(0);
+
+          expect(
+            box.y + box.height,
+            `[Clipping Failure on ${vp.name}] Modal bottom (${box.y + box.height}px) must fit within viewport height (${vp.height}px)`
+          ).toBeLessThanOrEqual(vp.height + 1);
+        }
+
+        // Close modal via close button
+        const closeBtn = page.locator('[data-testid="close-academic-rank-modal"]');
+        await closeBtn.click();
+        await expect(modal).not.toBeVisible();
+      }
+    });
+
+    test('23. PC & Laptop devices (>=1024px): Desktop sidebar has NO duplicate XP progress, only top nav bar has it', async ({
+      page,
+    }) => {
+      for (const width of [1024, 1280, 1366, 1440, 1920]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+        await page.waitForLoadState('domcontentloaded');
+
+        // Top navbar MUST have the XP badge
+        const headerXpBadge = page.locator('[data-testid="header-gamification-badge"]');
+        await expect(headerXpBadge).toBeVisible();
+
+        // Desktop sidebar MUST NOT have the XP badge
+        const desktopSidebar = page.locator('aside.hidden.lg\\:flex, aside.lg\\:fixed');
+        await expect(desktopSidebar).toBeVisible();
+        const sidebarXpBadge = desktopSidebar.locator('[data-testid="sidebar-gamification-badge"]');
+        const count = await sidebarXpBadge.count();
+        expect(count, `Desktop sidebar at width ${width}px should NOT contain duplicate XP badge`).toBe(0);
+      }
+    });
+
+    test('24. Mobile (<1024px): Top navbar hides XP badge, Mobile Drawer maintains XP badge, modal opens without clipping', async ({
+      page,
+    }) => {
+      for (const { width, height } of [{ width: 375, height: 667 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/');
+        await page.waitForLoadState('domcontentloaded');
+
+        // Top navbar XP badge MUST be hidden on mobile
+        const headerXpBadge = page.locator('[data-testid="header-gamification-badge"]');
+        await expect(headerXpBadge).toBeHidden();
+
+        // Open mobile navigation drawer via hamburger button
+        const menuBtn = page.locator('button[aria-label="Open navigation menu"]');
+        await expect(menuBtn).toBeVisible();
+        await menuBtn.click();
+
+        // Mobile drawer MUST contain the XP badge
+        const drawerXpBadge = page.locator('[data-testid="drawer-gamification-badge"]');
+        await expect(drawerXpBadge).toBeVisible({ timeout: 5000 });
+
+        // Click to open modal
+        await drawerXpBadge.click();
+
+        const modal = page.locator('[data-testid="academic-rank-modal"]');
+        await expect(modal).toBeVisible();
+
+        const box = await modal.boundingBox();
+        expect(box).not.toBeNull();
+        if (box) {
+          expect(box.y, 'Modal top on mobile must be >= 0').toBeGreaterThanOrEqual(0);
+          expect(box.y + box.height, 'Modal bottom on mobile must be <= viewport height').toBeLessThanOrEqual(height + 1);
+        }
+
+        // Close modal
+        await page.locator('[data-testid="close-academic-rank-modal"]').click();
+        await expect(modal).not.toBeVisible();
+      }
+    });
+  });
 });

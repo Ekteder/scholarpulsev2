@@ -342,11 +342,6 @@ export function WorkspaceShell() {
           <RealtimeSyncBadge variant="sidebar" />
         </div>
 
-        {/* Scholar Rank in Desktop Sidebar */}
-        <div className="px-3 pt-3 pb-1">
-          <GamificationBadge variant="sidebar" />
-        </div>
-
         <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
