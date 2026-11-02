@@ -113,8 +113,8 @@ export function AdminUsersView() {
           if (u.userId !== userId) return u;
           return {
             ...u,
-            ...(user?.fullName ? { fullName: user.fullName } : {}),
-            ...(user?.email ? { email: user.email } : {}),
+            ...(user?.fullName !== undefined ? { fullName: user.fullName } : {}),
+            ...(user?.email !== undefined ? { email: user.email } : {}),
             ...(user?.avatarUrl !== undefined ? { avatarUrl: user.avatarUrl } : {}),
           };
         })

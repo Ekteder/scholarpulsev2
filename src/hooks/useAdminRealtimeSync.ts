@@ -63,6 +63,7 @@ export function useAdminRealtimeSync(options: UseAdminRealtimeSyncOptions = {}) 
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const lastEventIdRef = useRef<number>(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<number>(0);
 
   const onUserChangeRef = useRef(onUserChange);
   const onUserBanToggleRef = useRef(onUserBanToggle);
@@ -183,6 +184,7 @@ export function useAdminRealtimeSync(options: UseAdminRealtimeSyncOptions = {}) 
 
       es.onopen = () => {
         if (isCleanedUp) return;
+        retryCountRef.current = 0;
         setSyncStatus('connected');
         setLastSyncTime(new Date());
       };
@@ -191,9 +193,11 @@ export function useAdminRealtimeSync(options: UseAdminRealtimeSyncOptions = {}) 
         if (isCleanedUp) return;
         setSyncStatus('connecting');
         if (es?.readyState === EventSource.CLOSED) {
+          const delay = Math.min(1000 * Math.pow(1.5, retryCountRef.current), 15000);
+          retryCountRef.current += 1;
           reconnectTimeoutRef.current = setTimeout(() => {
             if (!isCleanedUp) connectSSE();
-          }, 1500);
+          }, delay);
         }
       };
 
@@ -211,8 +215,17 @@ export function useAdminRealtimeSync(options: UseAdminRealtimeSyncOptions = {}) 
 
         try {
           const data = event.data ? JSON.parse(event.data) : {};
+          if (data?.lastSeenId) {
+            const parsed = parseInt(data.lastSeenId, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              updateLastEventId(parsed);
+            }
+          }
           if (data?._eventId) {
-            updateLastEventId(data._eventId);
+            const parsed = parseInt(data._eventId, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              updateLastEventId(parsed);
+            }
           }
 
           if (evType === 'admin:user:change') {

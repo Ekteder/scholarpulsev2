@@ -58,19 +58,28 @@ export async function GET(req: NextRequest) {
         }
       };
 
+      const formatSseMessage = (id: number, eventType: string, payload: string) => {
+        const lines = payload.split(/\r\n|\r|\n/);
+        const dataLines = lines.map((l) => `data: ${l}`).join('\n');
+        return `id: ${id}\nevent: ${eventType}\n${dataLines}\n\n`;
+      };
+
       // 1. Configure SSE retry timeout to 1 second
       safeEnqueue('retry: 1000\n\n');
 
-      // 2. Fetch current timer baseline and emit connected ack
+      // 2. Fetch current timer baseline and emit connected ack with baseline cursor ID
       const initialTimer = await getUserActiveTimer(user.uid);
+      const connectedPayload = JSON.stringify({
+        status: 'connected',
+        serverTime: new Date().toISOString(),
+        lastSeenId,
+        activeTimer: initialTimer || null,
+        isAdmin,
+      });
       safeEnqueue(
-        `event: connected\ndata: ${JSON.stringify({
-          status: 'connected',
-          serverTime: new Date().toISOString(),
-          lastSeenId,
-          activeTimer: initialTimer || null,
-          isAdmin,
-        })}\n\n`
+        lastSeenId > 0
+          ? `id: ${lastSeenId}\nevent: connected\ndata: ${connectedPayload}\n\n`
+          : `event: connected\ndata: ${connectedPayload}\n\n`
       );
 
       // If there's an active timer running on connection start, emit immediate timer:update
@@ -97,9 +106,7 @@ export async function GET(req: NextRequest) {
         if (isClosed) return;
         if (ev.id > lastSeenId) {
           lastSeenId = ev.id;
-          safeEnqueue(
-            `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
-          );
+          safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
         }
       };
       emitter.on(`user:${user.uid}`, localListener);
@@ -110,9 +117,7 @@ export async function GET(req: NextRequest) {
           if (isClosed) return;
           if (ev.id > lastSeenId) {
             lastSeenId = ev.id;
-            safeEnqueue(
-              `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
-            );
+            safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
           }
         };
         emitter.on(ADMIN_REALTIME_CHANNEL, adminListener);
@@ -127,9 +132,7 @@ export async function GET(req: NextRequest) {
             if (isClosed) break;
             if (ev.id > lastSeenId) {
               lastSeenId = ev.id;
-              safeEnqueue(
-                `id: ${ev.id}\nevent: ${ev.eventType}\ndata: ${ev.payload}\n\n`
-              );
+              safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
             }
           }
         } catch (err) {

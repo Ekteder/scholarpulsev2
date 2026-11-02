@@ -90,10 +90,10 @@ export async function publishSyncEvent({
             _originDeviceId: clientDeviceId,
           });
         } else {
-          payloadStr = payload;
+          payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
         }
       } catch {
-        payloadStr = payload;
+        payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
       }
     } else {
       payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
@@ -166,10 +166,10 @@ export async function emitAdminSyncEvent(
             _originDeviceId: clientDeviceId,
           });
         } else {
-          payloadStr = payload;
+          payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
         }
       } catch {
-        payloadStr = payload;
+        payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });
       }
     } else {
       payloadStr = JSON.stringify({ value: payload, _originDeviceId: clientDeviceId });

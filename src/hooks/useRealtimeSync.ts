@@ -195,8 +195,17 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
 
         try {
           const data = event.data ? JSON.parse(event.data) : {};
+          if (data?.lastSeenId) {
+            const parsed = parseInt(data.lastSeenId, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              updateLastEventId(parsed, userId);
+            }
+          }
           if (data?._eventId) {
-            updateLastEventId(data._eventId, userId);
+            const parsed = parseInt(data._eventId, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              updateLastEventId(parsed, userId);
+            }
           }
           const origin = data?._originDeviceId || data?.clientDeviceId;
           if (onEventRef.current) {

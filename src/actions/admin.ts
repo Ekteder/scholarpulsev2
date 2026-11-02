@@ -563,5 +563,6 @@ export async function setAdminUserTargetedAnnouncementAction(
 // Action aliases for flexibility across administrative modules and tests
 export const toggleUserBanAction = toggleAdminUserBanAction;
 export const sendTargetedAnnouncementAction = setAdminUserTargetedAnnouncementAction;
+export const updateUserDetailAction = updateAdminUserDetailAction;
 
 
