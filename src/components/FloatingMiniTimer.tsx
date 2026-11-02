@@ -30,7 +30,7 @@ export function FloatingMiniTimer() {
     !isPomodoro
       ? 'Stopwatch'
       : activeTimer.phase === 'focus'
-      ? 'Pomodoro Focus'
+      ? 'Focus'
       : activeTimer.phase === 'short_break'
       ? 'Short Break'
       : 'Long Break';
@@ -39,28 +39,29 @@ export function FloatingMiniTimer() {
     <div
       role="region"
       aria-label="Active floating study timer"
-      className="fixed bottom-20 left-3 right-3 sm:bottom-4 sm:left-auto sm:right-4 z-40 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white border border-slate-700/80 rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 shadow-xl flex items-center justify-between sm:justify-start gap-2.5 sm:gap-4 max-w-md animate-in fade-in slide-in-from-bottom-2 duration-200"
+      data-testid="floating-mini-timer"
+      className="fixed bottom-20 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 z-40 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white border border-slate-700/80 rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 shadow-xl flex items-center justify-between sm:justify-start gap-2 sm:gap-4 max-w-md animate-in fade-in slide-in-from-bottom-2 duration-200"
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
           style={{ backgroundColor: subject?.color || '#2563EB' }}
         >
-          <Timer className="w-4 h-4 text-white" />
+          <Timer className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
-            <span className="font-medium truncate">{subject?.name || 'Study'}</span>
+          <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] text-slate-300 leading-tight">
+            <span className="font-medium truncate max-w-[65px] xs:max-w-[100px] sm:max-w-none">{subject?.name || 'Study'}</span>
             <span>·</span>
             <span className="text-blue-300 whitespace-nowrap">{phaseLabel}</span>
           </div>
-          <div className="font-mono tabular-nums text-lg font-bold tracking-tight text-white">
+          <div data-testid="floating-timer-digits" className="font-mono tabular-nums text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
             {formatDigitalClock(displaySeconds, displaySeconds >= 3600)}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
         <AmbientNoiseMixer compact />
 
         {activeTimer.status === 'running' ? (
@@ -69,7 +70,8 @@ export function FloatingMiniTimer() {
             onClick={pauseTimer}
             title="Pause Timer"
             aria-label="Pause Timer"
-            className="p-2 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-amber-300 transition-colors cursor-pointer"
+            data-testid="floating-timer-pause"
+            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-amber-300 transition-colors cursor-pointer"
           >
             <Pause className="w-4 h-4" />
           </button>
@@ -79,7 +81,8 @@ export function FloatingMiniTimer() {
             onClick={resumeTimer}
             title="Resume Timer"
             aria-label="Resume Timer"
-            className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer shadow-xs"
+            data-testid="floating-timer-resume"
+            className="p-1.5 sm:p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer shadow-xs"
           >
             <Play className="w-4 h-4" />
           </button>
@@ -90,7 +93,8 @@ export function FloatingMiniTimer() {
           onClick={() => finishTimerSession()}
           title="Finish & Save Session"
           aria-label="Finish and Save Session"
-          className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer shadow-xs"
+          data-testid="floating-timer-finish"
+          className="p-1.5 sm:p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer shadow-xs"
         >
           <Square className="w-4 h-4" />
         </button>
@@ -100,7 +104,8 @@ export function FloatingMiniTimer() {
           onClick={() => setActiveTab('timer')}
           title="Open Full Timer View"
           aria-label="Open Full Timer View"
-          className="p-2 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+          data-testid="floating-timer-expand"
+          className="p-1.5 sm:p-2 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
         >
           <Maximize2 className="w-4 h-4" />
         </button>

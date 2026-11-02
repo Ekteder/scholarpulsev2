@@ -109,44 +109,42 @@ export function AmbientNoiseMixer({ compact = false }: AmbientNoiseMixerProps) {
     return (
       <div className="relative inline-flex items-center gap-1">
         <button
+          type="button"
           onClick={handleTogglePlay}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+          data-testid="floating-noise-toggle"
+          title={state.isPlaying ? 'Mute Ambient Noise' : 'Play Ambient Noise'}
+          aria-label={state.isPlaying ? 'Mute Ambient Noise' : 'Play Ambient Noise'}
+          className={`p-1.5 sm:p-2 rounded-lg transition-colors cursor-pointer ${
             state.isPlaying
-              ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20 animate-pulse'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+              ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-500/20'
+              : 'bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-slate-300'
           }`}
-          title="Ambient Study Noise Generator"
         >
           {state.isPlaying ? (
-            <>
-              <Volume2 className="w-3.5 h-3.5" />
-              <span>Noise On</span>
-            </>
+            <Volume2 className="w-4 h-4" />
           ) : (
-            <>
-              <VolumeX className="w-3.5 h-3.5 opacity-60" />
-              <span>Noise Off</span>
-            </>
+            <VolumeX className="w-4 h-4 opacity-70" />
           )}
         </button>
 
         <button
           type="button"
           onClick={() => setCompactMixerOpen(!compactMixerOpen)}
-          className={`p-1.5 rounded-lg border transition-all ${
-            compactMixerOpen
-              ? 'bg-blue-600 text-white border-blue-500'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/80 hover:text-white'
-          }`}
+          data-testid="floating-noise-sliders"
           title="Adjust Individual Sound Sliders"
           aria-label="Adjust Individual Sound Sliders"
+          className={`p-1.5 sm:p-2 rounded-lg border transition-colors cursor-pointer ${
+            compactMixerOpen
+              ? 'bg-blue-600 text-white border-blue-500'
+              : 'bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-slate-300 border-slate-700/80 hover:text-white'
+          }`}
         >
-          <Sliders className="w-3.5 h-3.5" />
+          <Sliders className="w-4 h-4" />
         </button>
 
         {/* Floating Compact Mixer Popover */}
         {compactMixerOpen && (
-          <div className="absolute bottom-full right-0 mb-3 w-76 sm:w-80 bg-slate-900/98 backdrop-blur-xl border border-slate-700/90 rounded-2xl p-4 shadow-2xl z-50 text-white space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="absolute bottom-full right-0 mb-3 w-76 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-slate-900/98 backdrop-blur-xl border border-slate-700/90 rounded-2xl p-4 shadow-2xl z-50 text-white space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
             {/* Header */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
