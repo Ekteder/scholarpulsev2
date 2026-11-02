@@ -19,9 +19,9 @@ export const ADMIN_USER: TestSessionUser = {
 };
 
 export const SUPERADMIN_USER: TestSessionUser = {
-  uid: 'superadmin-test-uid-002',
-  email: 'ekteder.sanglap@gmail.com',
-  name: 'Iktidar Sanglap (Superadmin)',
+  uid: '106603956445816075425',
+  email: 'iktidarsanglap01@gmail.com',
+  name: 'Iktidar Sanglap',
 };
 
 export const UNAUTHORIZED_USER: TestSessionUser = {
