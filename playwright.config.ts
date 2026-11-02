@@ -49,12 +49,14 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: `pnpm dev --port ${PORT}`,
-    url: BASE_URL,
-    reuseExistingServer: true,
-    timeout: 120000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  webServer: process.env.BASE_URL && !process.env.BASE_URL.includes('127.0.0.1') && !process.env.BASE_URL.includes('localhost')
+    ? undefined
+    : {
+        command: `pnpm start --port ${PORT}`,
+        url: BASE_URL,
+        reuseExistingServer: true,
+        timeout: 120000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
 });

@@ -85,9 +85,10 @@ export function createTamperedSessionToken(user: TestSessionUser = ADMIN_USER): 
 export async function injectSessionCookie(
   context: BrowserContext,
   token: string,
-  url: string = 'http://127.0.0.1:3000'
+  url?: string
 ): Promise<void> {
-  const targetUrl = url && url.startsWith('http') ? url : 'http://127.0.0.1:3000';
+  const envBaseUrl = process.env.BASE_URL || 'http://127.0.0.1:3000';
+  const targetUrl = url && url.startsWith('http') && !url.startsWith('about:') ? url : envBaseUrl;
   const parsed = new URL(targetUrl);
   await context.addCookies([
     {
@@ -96,7 +97,7 @@ export async function injectSessionCookie(
       domain: parsed.hostname,
       path: '/',
       httpOnly: true,
-      secure: false,
+      secure: parsed.protocol === 'https:',
       sameSite: 'Lax',
     },
   ]);
