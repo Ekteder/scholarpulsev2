@@ -392,6 +392,7 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       userGoals,
       catalogAchievements,
       unlockedAchievements,
+      allConfigs,
     ] = await Promise.all([
       db.select().from(profiles).where(eq(profiles.userId, userId)),
       db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId)),
@@ -431,7 +432,19 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
         .select()
         .from(userAchievements)
         .where(eq(userAchievements.userId, userId)),
+      db
+        .select()
+        .from(systemConfigurations)
+        .catch(() => []),
     ]);
+
+    const sysConfigMap: Record<string, string> = {};
+    if (allConfigs && Array.isArray(allConfigs)) {
+      for (const c of allConfigs) {
+        sysConfigMap[c.key] = c.value;
+      }
+    }
+    const announcementBanner = sysConfigMap['announcement_banner'] || '';
 
     let profile = profileRows[0];
     if (!profile) {
@@ -468,6 +481,8 @@ export async function getUserWorkspaceData(userId: string, email: string, name?:
       goals: userGoals,
       achievementsCatalog: finalCatalog,
       userAchievements: unlockedAchievements,
+      systemConfigurations: sysConfigMap,
+      announcementBanner,
     };
   } catch (error) {
     console.error('Database error in getUserWorkspaceData:', error);

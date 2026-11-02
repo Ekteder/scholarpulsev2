@@ -168,6 +168,8 @@ export interface WorkspaceData {
   goals: GoalItem[];
   achievementsCatalog: AchievementCatalogItem[];
   userAchievements: UserAchievementItem[];
+  systemConfigurations?: Record<string, string>;
+  announcementBanner?: string;
 }
 
 export type NavigationTab =

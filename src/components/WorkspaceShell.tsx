@@ -62,6 +62,7 @@ import {
   ClipboardList,
   History,
   LayoutDashboard,
+  Megaphone,
   Menu,
   Moon,
   MoreHorizontal,
@@ -114,6 +115,28 @@ export function WorkspaceShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<Set<NavigationTab>>(() => new Set([activeTab]));
   const [isAdmin, setIsAdmin] = useState(false);
+  const announcementText = data?.announcementBanner?.trim() || '';
+  const [dismissedAnnouncement, setDismissedAnnouncement] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('sp_dismissed_announcement');
+      if (stored) {
+        setDismissedAnnouncement(stored);
+      }
+    }
+  }, []);
+
+  const handleDismissAnnouncement = () => {
+    if (announcementText) {
+      setDismissedAnnouncement(announcementText);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('sp_dismissed_announcement', announcementText);
+      }
+    }
+  };
+
+  const showAnnouncement = Boolean(announcementText && dismissedAnnouncement !== announcementText);
 
   React.useEffect(() => {
     if (!user) {
@@ -574,6 +597,35 @@ export function WorkspaceShell() {
         </header>
 
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-28 lg:pb-8">
+          {showAnnouncement && (
+            <div
+              role="alert"
+              className="mb-4 sm:mb-6 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white p-3.5 sm:p-4 shadow-md shadow-blue-500/10 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+                  <Megaphone className="w-4 h-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-blue-200">
+                    Platform Announcement
+                  </div>
+                  <p className="text-xs sm:text-sm font-medium leading-snug break-words">
+                    {announcementText}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleDismissAnnouncement}
+                aria-label="Dismiss announcement"
+                title="Dismiss"
+                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <React.Suspense
             fallback={
               <div className="space-y-4 animate-pulse">
