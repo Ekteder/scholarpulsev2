@@ -2,7 +2,6 @@ const CACHE_NAME = 'scholarpulse-shell-v1';
 const OFFLINE_URL = '/offline.html';
 const PRECACHE_ASSETS = [
   '/',
-  '/index.html',
   '/offline.html',
   '/icon.svg',
   '/pwa-192x192.png',

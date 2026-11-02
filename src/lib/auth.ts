@@ -1,8 +1,9 @@
 import 'server-only';
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { db } from './db/index';
-import { profiles } from './db/schema';
+import { profiles, adminAllowlist } from './db/schema';
 import { eq } from 'drizzle-orm';
 
 const AUTH_SECRET = process.env.AUTH_SECRET || 'scholarpulse-v2-super-secure-production-secret-key-32chars';
@@ -154,7 +155,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       name: payload.name as string,
       avatarUrl: (payload.avatarUrl as string) || '',
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -174,3 +175,70 @@ export async function clearSession() {
     sameSite: 'lax',
   });
 }
+
+/**
+ * Checks whether the given user has administrator privileges.
+ * 1. Checks comma-separated list of emails in process.env.ADMIN_EMAILS
+ * 2. Checks admin_allowlist table in the PostgreSQL database
+ */
+export async function isUserAdmin(user: SessionUser | null): Promise<boolean> {
+  if (!user || !user.email) return false;
+  const normalizedEmail = user.email.toLowerCase().trim();
+
+  // 1. Check environment variable allowlist
+  const envAdmins = (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.toLowerCase().trim())
+    .filter(Boolean);
+
+  if (envAdmins.includes(normalizedEmail)) {
+    return true;
+  }
+
+  // 2. Query database admin_allowlist table
+  try {
+    const existing = await db
+      .select()
+      .from(adminAllowlist)
+      .where(eq(adminAllowlist.email, normalizedEmail))
+      .limit(1);
+
+    return existing.length > 0;
+  } catch (error) {
+    console.error('Error verifying admin authorization in admin_allowlist:', error);
+    return false;
+  }
+}
+
+/**
+ * Validates session and admin authorization.
+ * If unauthorized, redirects to /?authError=unauthorized_admin or throws an Error.
+ */
+export async function requireAdminUser(
+  options?: { redirect?: boolean } | boolean
+): Promise<SessionUser> {
+  const shouldRedirect =
+    typeof options === 'boolean' ? options : (options?.redirect ?? true);
+
+  const user = await getCurrentUser();
+  if (!user || !(await isUserAdmin(user))) {
+    if (shouldRedirect) {
+      try {
+        redirect('/?authError=unauthorized_admin');
+      } catch (err: unknown) {
+        const redirectErr = err as { digest?: string; message?: string };
+        if (
+          redirectErr?.digest?.startsWith('NEXT_REDIRECT') ||
+          redirectErr?.message === 'NEXT_REDIRECT'
+        ) {
+          throw err;
+        }
+        throw new Error('Unauthorized: Admin access required');
+      }
+    }
+    throw new Error('Unauthorized: Admin access required');
+  }
+
+  return user;
+}
+

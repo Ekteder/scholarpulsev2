@@ -486,3 +486,92 @@ export const syncEvents = pgTable(
   ]
 );
 
+// ==============================================================================
+// 19. Admin Allowlist table
+// ==============================================================================
+export const adminAllowlist = pgTable('admin_allowlist', {
+  email: text('email').primaryKey(),
+  role: text('role').notNull().default('admin'),
+  notes: text('notes').default(''),
+  addedBy: text('added_by').notNull().default('system'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AdminAllowlistEntry = typeof adminAllowlist.$inferSelect;
+export type NewAdminAllowlistEntry = typeof adminAllowlist.$inferInsert;
+
+// ==============================================================================
+// 20. Curriculum Stages table
+// ==============================================================================
+export const curriculumStages = pgTable(
+  'curriculum_stages',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    color: text('color').notNull().default('#3B82F6'),
+    badgeText: text('badge_text').default(''),
+    displayOrder: integer('display_order').notNull().default(0),
+    weight: integer('weight').notNull().default(1),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('curriculum_stages_order_idx').on(table.displayOrder)]
+);
+
+export type CurriculumStageRecord = typeof curriculumStages.$inferSelect;
+export type NewCurriculumStageRecord = typeof curriculumStages.$inferInsert;
+
+// ==============================================================================
+// 21. Goal Templates table
+// ==============================================================================
+export const goalTemplates = pgTable('goal_templates', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  description: text('description').default(''),
+  targetType: text('target_type').notNull(),
+  targetValue: integer('target_value').notNull(),
+  period: text('period').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type GoalTemplateRecord = typeof goalTemplates.$inferSelect;
+export type NewGoalTemplateRecord = typeof goalTemplates.$inferInsert;
+
+// ==============================================================================
+// 22. Schedule Templates table
+// ==============================================================================
+export const scheduleTemplates = pgTable(
+  'schedule_templates',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    dayOfWeek: integer('day_of_week').notNull(),
+    startTime: text('start_time').notNull(),
+    endTime: text('end_time').notNull(),
+    subjectId: text('subject_id'),
+    activityType: text('activity_type').default('study'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('schedule_templates_day_idx').on(table.dayOfWeek)]
+);
+
+export type ScheduleTemplateRecord = typeof scheduleTemplates.$inferSelect;
+export type NewScheduleTemplateRecord = typeof scheduleTemplates.$inferInsert;
+
+// ==============================================================================
+// 23. System Configurations table
+// ==============================================================================
+export const systemConfigurations = pgTable('system_configurations', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  description: text('description').default(''),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: text('updated_by').default('system'),
+});
+
+export type SystemConfigurationRecord = typeof systemConfigurations.$inferSelect;
+export type NewSystemConfigurationRecord = typeof systemConfigurations.$inferInsert;
+
+

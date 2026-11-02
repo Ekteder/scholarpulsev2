@@ -6,10 +6,34 @@
   "theme_color": "#0F172A",
   "background_color": "#0F172A",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "any",
   "start_url": "/",
   "scope": "/",
   "categories": ["education", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Study Timer",
+      "short_name": "Timer",
+      "description": "Start a focused Pomodoro study timer session",
+      "url": "/?tab=timer",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Revision Tracker",
+      "short_name": "Revision",
+      "description": "Track syllabus and chapter revision matrix",
+      "url": "/?tab=revision",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Study Goals",
+      "short_name": "Goals",
+      "description": "View and manage study milestones",
+      "url": "/?tab=goals",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ],
   "icons": [
     {
       "src": "/pwa-192x192.png",

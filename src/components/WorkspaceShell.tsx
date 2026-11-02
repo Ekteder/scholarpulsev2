@@ -51,6 +51,8 @@ import { GamificationBadge } from './GamificationBadge';
 import { RealtimeSyncBadge } from './RealtimeSyncBadge';
 import { notificationService } from '@/lib/notifications';
 import { NavigationTab } from '@/types/index';
+import Link from 'next/link';
+import { checkIsAdminAction } from '@/app/admin/check-admin';
 import {
   Award,
   BarChart3,
@@ -65,6 +67,7 @@ import {
   MoreHorizontal,
   Play,
   Settings,
+  ShieldCheck,
   Sun,
   Target,
   Timer,
@@ -110,6 +113,25 @@ export function WorkspaceShell() {
   const { theme, resolvedTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<Set<NavigationTab>>(() => new Set([activeTab]));
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  React.useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    let active = true;
+    checkIsAdminAction()
+      .then((res) => {
+        if (active) setIsAdmin(res);
+      })
+      .catch(() => {
+        if (active) setIsAdmin(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   React.useEffect(() => {
     setVisitedTabs((prev) => {
@@ -278,7 +300,18 @@ export function WorkspaceShell() {
 
         {/* User Footer Card */}
         {data && (
-          <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/80 border border-blue-200/80 dark:border-blue-800/80 text-xs font-semibold transition-colors cursor-pointer"
+                title="ScholarPulse Admin Console"
+              >
+                <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="truncate">Admin Console</span>
+              </Link>
+            )}
+
             <button
               type="button"
               onClick={() => handleSelectNav('settings')}
@@ -369,7 +402,18 @@ export function WorkspaceShell() {
             </nav>
 
             {data && (
-              <div className="p-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/80 border border-blue-200/80 dark:border-blue-800/80 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span className="truncate">Admin Console</span>
+                  </Link>
+                )}
+
                 <button
                   type="button"
                   onClick={() => handleSelectNav('settings')}
@@ -409,96 +453,98 @@ export function WorkspaceShell() {
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
-        <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:pb-3.5 flex items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
-          {/* Zone 1: Mobile Menu Trigger + Breadcrumb Trail */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer transition-colors"
-              aria-label="Open navigation menu"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 truncate">
-              <span className="font-display font-bold text-slate-900 dark:text-white shrink-0">
-                Workspace
-              </span>
-              <span className="text-slate-300 dark:text-slate-700 shrink-0">/</span>
-              <span className="text-blue-600 dark:text-blue-400 font-semibold truncate">
-                {currentNavLabel}
-              </span>
-            </div>
-          </div>
-
-          {/* Zone 2: Navigation Shortcuts on desktop */}
-          <nav className="hidden xl:flex items-center gap-5 text-xs font-medium text-slate-600 dark:text-slate-400">
-            <button
-              type="button"
-              onClick={() => handleSelectNav('dashboard')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectNav('revision')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer font-semibold text-blue-600 dark:text-blue-400"
-            >
-              Revision
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectNav('subjects')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Subjects ({data?.subjects.filter((s) => !s.isArchived).length || 0})
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectNav('schedule')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Timetable & Tasks
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectNav('analytics')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Analytics
-            </button>
-          </nav>
-
-          {/* Zone 3: Live Sync, Gamification, Theme Toggle & Primary Action */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <RealtimeSyncBadge variant="header" />
-            <GamificationBadge variant="header" />
-
-            <div className="hidden sm:block">
-              <PWAInstallButton variant="header" />
+        <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:pb-3.5 w-full min-w-0">
+          <div className="max-w-[1400px] w-full mx-auto flex items-center justify-between gap-2 sm:gap-4">
+            {/* Zone 1: Mobile Menu Trigger + Breadcrumb Trail */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer transition-colors"
+                aria-label="Open navigation menu"
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+              <div className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 truncate">
+                <span className="font-display font-bold text-slate-900 dark:text-white shrink-0">
+                  Workspace
+                </span>
+                <span className="text-slate-300 dark:text-slate-700 shrink-0">/</span>
+                <span className="text-blue-600 dark:text-blue-400 font-semibold truncate">
+                  {currentNavLabel}
+                </span>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title="Toggle theme"
-              aria-label="Toggle theme"
-              className="p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
-            >
-              <Sun className="w-4 h-4 hidden dark:block" />
-              <Moon className="w-4 h-4 block dark:hidden" />
-            </button>
+            {/* Zone 2: Navigation Shortcuts on desktop */}
+            <nav className="hidden xl:flex items-center gap-5 text-xs font-medium text-slate-600 dark:text-slate-400">
+              <button
+                type="button"
+                onClick={() => handleSelectNav('dashboard')}
+                className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectNav('revision')}
+                className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer font-semibold text-blue-600 dark:text-blue-400"
+              >
+                Revision
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectNav('subjects')}
+                className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Subjects ({data?.subjects.filter((s) => !s.isArchived).length || 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectNav('schedule')}
+                className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Timetable & Tasks
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectNav('analytics')}
+                className="hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Analytics
+              </button>
+            </nav>
 
-            <button
-              type="button"
-              onClick={() => handleSelectNav('timer')}
-              className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
-            >
-              <Play className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Study </span>
-              <span>Timer</span>
-            </button>
+            {/* Zone 3: Live Sync, Gamification, Theme Toggle & Primary Action */}
+            <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+              <RealtimeSyncBadge variant="header" />
+              <GamificationBadge variant="header" />
+
+              <div className="hidden sm:block">
+                <PWAInstallButton variant="header" />
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title="Toggle theme"
+                aria-label="Toggle theme"
+                className="p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+              >
+                <Sun className="w-4 h-4 hidden dark:block" />
+                <Moon className="w-4 h-4 block dark:hidden" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectNav('timer')}
+                className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Study </span>
+                <span>Timer</span>
+              </button>
+            </div>
           </div>
         </header>
 

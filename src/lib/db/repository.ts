@@ -1,20 +1,25 @@
 import 'server-only';
-import { and, asc, desc, eq, gt, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, lt, ne } from 'drizzle-orm';
 import { db } from './index';
 import {
   achievements,
   activeTimerSessions,
+  adminAllowlist,
   curriculumPapers,
   curriculumResources,
+  curriculumStages,
   curriculumSubjects,
   curriculumTopics,
+  goalTemplates,
   goals,
   notificationPreferences,
   profiles,
   revisionRecords,
+  scheduleTemplates,
   schedules,
   studySessions,
   subjects,
+  systemConfigurations,
   tasks,
   userAchievements,
   userCurriculumCustomizations,
@@ -25,6 +30,7 @@ import {
   DEFAULT_PAPERS,
   DEFAULT_TOPICS,
 } from './curriculumSeed';
+import { REVISION_CATEGORIES } from '@/types';
 import {
   addDaysToYmd,
   computeStreaksFromDates,
@@ -117,6 +123,10 @@ export const DEFAULT_ACHIEVEMENTS = [
 
 let achievementsSeeded = false;
 let inMemoryCatalogCache: (typeof achievements.$inferSelect)[] | null = null;
+
+export function invalidateAchievementsCatalogCache() {
+  inMemoryCatalogCache = null;
+}
 
 export async function ensureAchievementsCatalog() {
   if (achievementsSeeded) return;
@@ -994,15 +1004,15 @@ export async function deleteUserAccountTransactional(userId: string) {
 
 /**
  * Loads the complete revision workspace:
- * - Code-first static syllabus (7 default subjects, 15 papers, 151 chapters) served directly
- *   from in-memory TypeScript module (0ms read latency, zero database roundtrips)
+ * - Dynamically queries global curriculum subjects, papers, topics, and revision stages (userId IS NULL)
+ *   from PostgreSQL, falling back to static constants if tables are empty.
  * - User-added custom curriculum subjects, papers, and topics (userId = userId)
  * - User customizations (hidden, custom title, custom order)
  * - User's revision activity records
  * - User's curriculum resources
  */
 export async function getRevisionWorkspaceData(userId: string) {
-  // 1. Query only user-specific dynamic data from DB in parallel
+  // 1. Query user-specific dynamic data, global curriculum (userId IS NULL), and stages in parallel
   const [
     userSubjects,
     userPapers,
@@ -1010,6 +1020,10 @@ export async function getRevisionWorkspaceData(userId: string) {
     customizationsList,
     recordsList,
     resourcesList,
+    globalSubjects,
+    globalPapers,
+    globalTopics,
+    dbStages,
   ] = await Promise.all([
     db
       .select()
@@ -1040,6 +1054,25 @@ export async function getRevisionWorkspaceData(userId: string) {
       .from(curriculumResources)
       .where(eq(curriculumResources.userId, userId))
       .orderBy(desc(curriculumResources.createdAt)),
+    db
+      .select()
+      .from(curriculumSubjects)
+      .where(isNull(curriculumSubjects.userId))
+      .orderBy(asc(curriculumSubjects.displayOrder)),
+    db
+      .select()
+      .from(curriculumPapers)
+      .where(isNull(curriculumPapers.userId))
+      .orderBy(asc(curriculumPapers.displayOrder)),
+    db
+      .select()
+      .from(curriculumTopics)
+      .where(isNull(curriculumTopics.userId))
+      .orderBy(asc(curriculumTopics.displayOrder)),
+    db
+      .select()
+      .from(curriculumStages)
+      .orderBy(asc(curriculumStages.displayOrder)),
   ]);
 
   // 2. Build fast lookup map for customizations: `${targetType}_${targetId}`
@@ -1048,10 +1081,22 @@ export async function getRevisionWorkspaceData(userId: string) {
     custMap.set(`${c.targetType}_${c.targetId}`, c);
   }
 
-  // 3. Merge subjects: static defaults + user-added custom subjects, with customizations applied
+  // 3. Merge subjects: global defaults (from DB with fallback to static constants) + user subjects
+  let baseSubjects = globalSubjects;
+  if (!baseSubjects || baseSubjects.length === 0) {
+    baseSubjects = DEFAULT_SUBJECTS as unknown as typeof globalSubjects;
+  } else {
+    // If DB has global subjects, ensure any default subjects not yet explicitly customized in DB are retained
+    const dbSubjectIds = new Set(baseSubjects.map((s) => s.id));
+    const missingDefaults = DEFAULT_SUBJECTS.filter((s) => !dbSubjectIds.has(s.id));
+    if (missingDefaults.length > 0) {
+      baseSubjects = [...baseSubjects, ...(missingDefaults as unknown as typeof globalSubjects)];
+    }
+  }
+
   const userSubjectIdSet = new Set(userSubjects.map((s) => s.id));
   const subjectsList = [
-    ...DEFAULT_SUBJECTS.filter((s) => !userSubjectIdSet.has(s.id)),
+    ...baseSubjects.filter((s) => !userSubjectIdSet.has(s.id)),
     ...userSubjects,
   ]
     .map((s) => {
@@ -1068,10 +1113,21 @@ export async function getRevisionWorkspaceData(userId: string) {
     })
     .sort((a, b) => a.displayOrder - b.displayOrder);
 
-  // 4. Merge papers: static defaults + user-added custom papers, with customizations applied
+  // 4. Merge papers: global defaults (from DB with fallback to static constants) + user papers
+  let basePapers = globalPapers;
+  if (!basePapers || basePapers.length === 0) {
+    basePapers = DEFAULT_PAPERS as unknown as typeof globalPapers;
+  } else {
+    const dbPaperIds = new Set(basePapers.map((p) => p.id));
+    const missingDefaults = DEFAULT_PAPERS.filter((p) => !dbPaperIds.has(p.id));
+    if (missingDefaults.length > 0) {
+      basePapers = [...basePapers, ...(missingDefaults as unknown as typeof globalPapers)];
+    }
+  }
+
   const userPaperIdSet = new Set(userPapers.map((p) => p.id));
   const papersList = [
-    ...DEFAULT_PAPERS.filter((p) => !userPaperIdSet.has(p.id)),
+    ...basePapers.filter((p) => !userPaperIdSet.has(p.id)),
     ...userPapers,
   ]
     .map((p) => {
@@ -1088,10 +1144,21 @@ export async function getRevisionWorkspaceData(userId: string) {
     })
     .sort((a, b) => a.displayOrder - b.displayOrder);
 
-  // 5. Merge topics: static defaults + user-added custom topics, with customizations applied
+  // 5. Merge topics: global defaults (from DB with fallback to static constants) + user topics
+  let baseTopics = globalTopics;
+  if (!baseTopics || baseTopics.length === 0) {
+    baseTopics = DEFAULT_TOPICS as unknown as typeof globalTopics;
+  } else {
+    const dbTopicIds = new Set(baseTopics.map((t) => t.id));
+    const missingDefaults = DEFAULT_TOPICS.filter((t) => !dbTopicIds.has(t.id));
+    if (missingDefaults.length > 0) {
+      baseTopics = [...baseTopics, ...(missingDefaults as unknown as typeof globalTopics)];
+    }
+  }
+
   const userTopicIdSet = new Set(userTopics.map((t) => t.id));
   const topicsList = [
-    ...DEFAULT_TOPICS.filter((t) => !userTopicIdSet.has(t.id)),
+    ...baseTopics.filter((t) => !userTopicIdSet.has(t.id)),
     ...userTopics,
   ]
     .map((t) => {
@@ -1108,10 +1175,26 @@ export async function getRevisionWorkspaceData(userId: string) {
     })
     .sort((a, b) => a.displayOrder - b.displayOrder);
 
+  // 6. Stages: from DB with fallback to default REVISION_CATEGORIES
+  let effectiveStages = dbStages;
+  if (!effectiveStages || effectiveStages.length === 0) {
+    effectiveStages = REVISION_CATEGORIES.map((cat, idx) => ({
+      id: cat.id,
+      name: cat.label,
+      color: cat.color,
+      badgeText: cat.shortLabel,
+      displayOrder: idx,
+      weight: 1,
+      isActive: true,
+      createdAt: new Date(),
+    })) as unknown as typeof dbStages;
+  }
+
   return {
     subjects: subjectsList,
     papers: papersList,
     topics: topicsList,
+    stages: effectiveStages,
     customizations: customizationsList,
     records: recordsList,
     resources: resourcesList,
@@ -1985,4 +2068,535 @@ export async function awardUserXp(userId: string, amount: number) {
 
   return updated;
 }
+
+// ==============================================================================
+// ADMIN BACKEND REPOSITORY METHODS
+// ==============================================================================
+
+// 1. Admin Allowlist
+export async function getAllAdminAllowlist() {
+  return await db
+    .select()
+    .from(adminAllowlist)
+    .orderBy(desc(adminAllowlist.createdAt));
+}
+
+export async function getAdminAllowlistEntry(email: string) {
+  const [entry] = await db
+    .select()
+    .from(adminAllowlist)
+    .where(eq(adminAllowlist.email, email.toLowerCase().trim()))
+    .limit(1);
+  return entry || null;
+}
+
+export async function createAdminAllowlistEntry(data: {
+  email: string;
+  role?: string;
+  notes?: string;
+  addedBy?: string;
+}) {
+  const [entry] = await db
+    .insert(adminAllowlist)
+    .values({
+      email: data.email.toLowerCase().trim(),
+      role: data.role || 'admin',
+      notes: data.notes || '',
+      addedBy: data.addedBy || 'system',
+    })
+    .onConflictDoUpdate({
+      target: adminAllowlist.email,
+      set: {
+        role: data.role || 'admin',
+        notes: data.notes || '',
+        addedBy: data.addedBy || 'system',
+      },
+    })
+    .returning();
+  return entry;
+}
+
+export async function deleteAdminAllowlistEntry(email: string) {
+  const [deleted] = await db
+    .delete(adminAllowlist)
+    .where(eq(adminAllowlist.email, email.toLowerCase().trim()))
+    .returning();
+  return deleted || null;
+}
+
+// 2. Curriculum Stages
+export async function getAllCurriculumStages() {
+  const stages = await db
+    .select()
+    .from(curriculumStages)
+    .orderBy(asc(curriculumStages.displayOrder));
+
+  if (stages.length === 0) {
+    return REVISION_CATEGORIES.map((cat, idx) => ({
+      id: cat.id,
+      name: cat.label,
+      color: cat.color,
+      badgeText: cat.shortLabel,
+      displayOrder: idx,
+      weight: 1,
+      isActive: true,
+      createdAt: new Date(),
+    }));
+  }
+
+  return stages;
+}
+
+export async function getCurriculumStageById(id: string) {
+  const [stage] = await db
+    .select()
+    .from(curriculumStages)
+    .where(eq(curriculumStages.id, id))
+    .limit(1);
+  return stage || null;
+}
+
+export async function saveAdminCurriculumStage(data: {
+  id: string;
+  name: string;
+  color?: string;
+  badgeText?: string;
+  displayOrder?: number;
+  weight?: number;
+  isActive?: boolean;
+}) {
+  const [stage] = await db
+    .insert(curriculumStages)
+    .values({
+      id: data.id,
+      name: data.name,
+      color: data.color || '#3B82F6',
+      badgeText: data.badgeText || '',
+      displayOrder: data.displayOrder ?? 0,
+      weight: data.weight ?? 1,
+      isActive: data.isActive ?? true,
+    })
+    .onConflictDoUpdate({
+      target: curriculumStages.id,
+      set: {
+        name: data.name,
+        ...(data.color !== undefined ? { color: data.color } : {}),
+        ...(data.badgeText !== undefined ? { badgeText: data.badgeText } : {}),
+        ...(data.displayOrder !== undefined ? { displayOrder: data.displayOrder } : {}),
+        ...(data.weight !== undefined ? { weight: data.weight } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    })
+    .returning();
+  return stage;
+}
+
+export async function deleteAdminCurriculumStage(id: string) {
+  const [deleted] = await db
+    .delete(curriculumStages)
+    .where(eq(curriculumStages.id, id))
+    .returning();
+  return deleted || null;
+}
+
+export async function reorderCurriculumStages(orderedIds: string[]) {
+  const results = [];
+  for (let order = 0; order < orderedIds.length; order++) {
+    const [updated] = await db
+      .update(curriculumStages)
+      .set({ displayOrder: order })
+      .where(eq(curriculumStages.id, orderedIds[order]))
+      .returning();
+    if (updated) results.push(updated);
+  }
+  return results;
+}
+
+// 3. Goal Templates
+export async function getAllGoalTemplates() {
+  return await db
+    .select()
+    .from(goalTemplates)
+    .orderBy(desc(goalTemplates.createdAt));
+}
+
+export async function getGoalTemplateById(id: string) {
+  const [template] = await db
+    .select()
+    .from(goalTemplates)
+    .where(eq(goalTemplates.id, id))
+    .limit(1);
+  return template || null;
+}
+
+export async function saveAdminGoalTemplate(data: {
+  id?: string;
+  title: string;
+  description?: string;
+  targetType: string;
+  targetValue: number;
+  period: string;
+  isActive?: boolean;
+}) {
+  const id = data.id || crypto.randomUUID();
+  const [template] = await db
+    .insert(goalTemplates)
+    .values({
+      id,
+      title: data.title,
+      description: data.description || '',
+      targetType: data.targetType,
+      targetValue: data.targetValue,
+      period: data.period,
+      isActive: data.isActive ?? true,
+    })
+    .onConflictDoUpdate({
+      target: goalTemplates.id,
+      set: {
+        title: data.title,
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        targetType: data.targetType,
+        targetValue: data.targetValue,
+        period: data.period,
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    })
+    .returning();
+  return template;
+}
+
+export async function deleteAdminGoalTemplate(id: string) {
+  const [deleted] = await db
+    .delete(goalTemplates)
+    .where(eq(goalTemplates.id, id))
+    .returning();
+  return deleted || null;
+}
+
+// 4. Schedule Templates
+export async function getAllScheduleTemplates() {
+  return await db
+    .select()
+    .from(scheduleTemplates)
+    .orderBy(asc(scheduleTemplates.dayOfWeek), asc(scheduleTemplates.startTime));
+}
+
+export async function getScheduleTemplateById(id: string) {
+  const [template] = await db
+    .select()
+    .from(scheduleTemplates)
+    .where(eq(scheduleTemplates.id, id))
+    .limit(1);
+  return template || null;
+}
+
+export async function saveAdminScheduleTemplate(data: {
+  id?: string;
+  title: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  subjectId?: string | null;
+  activityType?: string;
+  isActive?: boolean;
+}) {
+  const id = data.id || crypto.randomUUID();
+  const [template] = await db
+    .insert(scheduleTemplates)
+    .values({
+      id,
+      title: data.title,
+      dayOfWeek: data.dayOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      subjectId: data.subjectId || null,
+      activityType: data.activityType || 'study',
+      isActive: data.isActive ?? true,
+    })
+    .onConflictDoUpdate({
+      target: scheduleTemplates.id,
+      set: {
+        title: data.title,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        subjectId: data.subjectId || null,
+        ...(data.activityType !== undefined ? { activityType: data.activityType } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    })
+    .returning();
+  return template;
+}
+
+export async function deleteAdminScheduleTemplate(id: string) {
+  const [deleted] = await db
+    .delete(scheduleTemplates)
+    .where(eq(scheduleTemplates.id, id))
+    .returning();
+  return deleted || null;
+}
+
+// 5. System Configurations
+export async function getAllSystemConfigurations() {
+  return await db
+    .select()
+    .from(systemConfigurations)
+    .orderBy(asc(systemConfigurations.key));
+}
+
+export async function getSystemConfiguration(key: string) {
+  const [config] = await db
+    .select()
+    .from(systemConfigurations)
+    .where(eq(systemConfigurations.key, key))
+    .limit(1);
+  return config || null;
+}
+
+export async function getSystemConfigurationValue(key: string, defaultValue = ''): Promise<string> {
+  const config = await getSystemConfiguration(key);
+  return config ? config.value : defaultValue;
+}
+
+export async function saveAdminSystemConfiguration(data: {
+  key: string;
+  value: string;
+  description?: string;
+  updatedBy?: string;
+}) {
+  const [config] = await db
+    .insert(systemConfigurations)
+    .values({
+      key: data.key,
+      value: data.value,
+      description: data.description || '',
+      updatedAt: new Date(),
+      updatedBy: data.updatedBy || 'admin',
+    })
+    .onConflictDoUpdate({
+      target: systemConfigurations.key,
+      set: {
+        value: data.value,
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        updatedAt: new Date(),
+        updatedBy: data.updatedBy || 'admin',
+      },
+    })
+    .returning();
+  return config;
+}
+
+export async function deleteAdminSystemConfiguration(key: string) {
+  const [deleted] = await db
+    .delete(systemConfigurations)
+    .where(eq(systemConfigurations.key, key))
+    .returning();
+  return deleted || null;
+}
+
+// 6. Global Curriculum Subjects, Papers, Topics (Admin - userId IS NULL)
+export async function getAllGlobalCurriculumSubjects() {
+  return await db
+    .select()
+    .from(curriculumSubjects)
+    .where(isNull(curriculumSubjects.userId))
+    .orderBy(asc(curriculumSubjects.displayOrder));
+}
+
+export async function saveAdminCurriculumSubject(data: {
+  id?: string;
+  name: string;
+  code?: string;
+  color?: string;
+  icon?: string;
+  displayOrder?: number;
+}) {
+  const id = data.id || crypto.randomUUID();
+  const [subject] = await db
+    .insert(curriculumSubjects)
+    .values({
+      id,
+      userId: null,
+      name: data.name,
+      code: data.code || '',
+      color: data.color || '#2563EB',
+      icon: data.icon || 'BookOpen',
+      displayOrder: data.displayOrder ?? 0,
+    })
+    .onConflictDoUpdate({
+      target: curriculumSubjects.id,
+      set: {
+        name: data.name,
+        ...(data.code !== undefined ? { code: data.code } : {}),
+        ...(data.color !== undefined ? { color: data.color } : {}),
+        ...(data.icon !== undefined ? { icon: data.icon } : {}),
+        ...(data.displayOrder !== undefined ? { displayOrder: data.displayOrder } : {}),
+      },
+    })
+    .returning();
+  return subject;
+}
+
+export async function deleteAdminCurriculumSubject(id: string) {
+  const [deleted] = await db
+    .delete(curriculumSubjects)
+    .where(and(eq(curriculumSubjects.id, id), isNull(curriculumSubjects.userId)))
+    .returning();
+  return deleted || null;
+}
+
+export async function getAllGlobalCurriculumPapers() {
+  return await db
+    .select()
+    .from(curriculumPapers)
+    .where(isNull(curriculumPapers.userId))
+    .orderBy(asc(curriculumPapers.displayOrder));
+}
+
+export async function saveAdminCurriculumPaper(data: {
+  id?: string;
+  subjectId: string;
+  title: string;
+  paperCode?: string;
+  displayOrder?: number;
+}) {
+  const id = data.id || crypto.randomUUID();
+  const [paper] = await db
+    .insert(curriculumPapers)
+    .values({
+      id,
+      subjectId: data.subjectId,
+      userId: null,
+      title: data.title,
+      paperCode: data.paperCode || '',
+      displayOrder: data.displayOrder ?? 0,
+    })
+    .onConflictDoUpdate({
+      target: curriculumPapers.id,
+      set: {
+        subjectId: data.subjectId,
+        title: data.title,
+        ...(data.paperCode !== undefined ? { paperCode: data.paperCode } : {}),
+        ...(data.displayOrder !== undefined ? { displayOrder: data.displayOrder } : {}),
+      },
+    })
+    .returning();
+  return paper;
+}
+
+export async function deleteAdminCurriculumPaper(id: string) {
+  const [deleted] = await db
+    .delete(curriculumPapers)
+    .where(and(eq(curriculumPapers.id, id), isNull(curriculumPapers.userId)))
+    .returning();
+  return deleted || null;
+}
+
+export async function getAllGlobalCurriculumTopics() {
+  return await db
+    .select()
+    .from(curriculumTopics)
+    .where(isNull(curriculumTopics.userId))
+    .orderBy(asc(curriculumTopics.displayOrder));
+}
+
+export async function saveAdminCurriculumTopic(data: {
+  id?: string;
+  paperId: string;
+  subjectId: string;
+  title: string;
+  chapterNumber?: number | null;
+  displayOrder?: number;
+}) {
+  const id = data.id || crypto.randomUUID();
+  const [topic] = await db
+    .insert(curriculumTopics)
+    .values({
+      id,
+      paperId: data.paperId,
+      subjectId: data.subjectId,
+      userId: null,
+      title: data.title,
+      chapterNumber: data.chapterNumber ?? null,
+      displayOrder: data.displayOrder ?? 0,
+    })
+    .onConflictDoUpdate({
+      target: curriculumTopics.id,
+      set: {
+        paperId: data.paperId,
+        subjectId: data.subjectId,
+        title: data.title,
+        ...(data.chapterNumber !== undefined ? { chapterNumber: data.chapterNumber } : {}),
+        ...(data.displayOrder !== undefined ? { displayOrder: data.displayOrder } : {}),
+      },
+    })
+    .returning();
+  return topic;
+}
+
+export async function deleteAdminCurriculumTopic(id: string) {
+  const [deleted] = await db
+    .delete(curriculumTopics)
+    .where(and(eq(curriculumTopics.id, id), isNull(curriculumTopics.userId)))
+    .returning();
+  return deleted || null;
+}
+
+// 7. Achievements Catalog (Admin)
+export async function getAllAchievementsCatalog() {
+  await ensureAchievementsCatalog();
+  return await db
+    .select()
+    .from(achievements)
+    .orderBy(asc(achievements.category), asc(achievements.title));
+}
+
+export async function saveAdminAchievement(data: {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  category: string;
+  requirementType: string;
+  requirementValue: number;
+}) {
+  const [badge] = await db
+    .insert(achievements)
+    .values({
+      id: data.id,
+      title: data.title,
+      description: data.description,
+      icon: data.icon,
+      category: data.category,
+      requirementType: data.requirementType,
+      requirementValue: data.requirementValue,
+    })
+    .onConflictDoUpdate({
+      target: achievements.id,
+      set: {
+        title: data.title,
+        description: data.description,
+        icon: data.icon,
+        category: data.category,
+        requirementType: data.requirementType,
+        requirementValue: data.requirementValue,
+      },
+    })
+    .returning();
+
+  inMemoryCatalogCache = null;
+  return badge;
+}
+
+export async function deleteAdminAchievement(id: string) {
+  const [deleted] = await db
+    .delete(achievements)
+    .where(eq(achievements.id, id))
+    .returning();
+
+  inMemoryCatalogCache = null;
+  return deleted || null;
+}
+
 

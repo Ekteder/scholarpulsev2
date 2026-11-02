@@ -237,11 +237,30 @@ export function RevisionTrackerView() {
     return effectiveTopics.filter((t) => showHidden || !t.isHidden);
   }, [effectiveTopics, showHidden]);
 
-  // Fast helper: get completed activities count for a topic (0 to 6)
+  // Dynamically configured revision stages from DB (or fallback to default REVISION_CATEGORIES)
+  const stages = useMemo(() => {
+    const rawStages = (revisionData as any)?.stages;
+    if (Array.isArray(rawStages) && rawStages.length > 0) {
+      return rawStages
+        .filter((s: any) => s.isActive !== false)
+        .sort((a: any, b: any) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+        .map((s: any) => ({
+          id: s.id as RevisionCategory,
+          label: s.name,
+          shortLabel: s.badgeText || s.name.slice(0, 3).toUpperCase(),
+          color: s.color || '#3B82F6',
+          description: s.name,
+          weight: s.weight ?? 1,
+        }));
+    }
+    return REVISION_CATEGORIES;
+  }, [revisionData]);
+
+  // Fast helper: get completed activities count for a topic
   const getTopicProgress = useCallback(
     (topicId: string) => {
       let completedCount = 0;
-      for (const cat of REVISION_CATEGORIES) {
+      for (const cat of stages) {
         const rec = recordMap.get(`${topicId}_${cat.id}`);
         if (rec && rec.isCompleted) {
           completedCount++;
@@ -249,21 +268,17 @@ export function RevisionTrackerView() {
       }
       return completedCount;
     },
-    [recordMap]
+    [recordMap, stages]
   );
 
   // KPI Calculations
   const stats = useMemo(() => {
-    const totalPossibleActivities = visibleTopics.length * 6;
+    const totalPossibleActivities = visibleTopics.length * (stages.length || 6);
     let totalCompleted = 0;
-    const categoryCounts: Record<RevisionCategory, number> = {
-      class: 0,
-      revision_note: 0,
-      book_reading: 0,
-      mcq_exam: 0,
-      cq_solve: 0,
-      test_paper_solving: 0,
-    };
+    const categoryCounts: Record<string, number> = {};
+    for (const s of stages) {
+      categoryCounts[s.id] = 0;
+    }
 
     let chaptersNotStarted = 0;
     let chaptersInProgress = 0;
@@ -272,14 +287,14 @@ export function RevisionTrackerView() {
     for (const t of visibleTopics) {
       const completed = getTopicProgress(t.id);
       if (completed === 0) chaptersNotStarted++;
-      else if (completed === 6) chaptersCompleted++;
+      else if (completed === stages.length) chaptersCompleted++;
       else chaptersInProgress++;
 
-      for (const cat of REVISION_CATEGORIES) {
+      for (const cat of stages) {
         const rec = recordMap.get(`${t.id}_${cat.id}`);
         if (rec && rec.isCompleted) {
           totalCompleted++;
-          categoryCounts[cat.id]++;
+          categoryCounts[cat.id] = (categoryCounts[cat.id] || 0) + 1;
         }
       }
     }
@@ -753,9 +768,9 @@ export function RevisionTrackerView() {
         ...r,
         topic: topicMap.get(r.topicId),
         subject: subjMap.get(r.subjectId),
-        categoryMeta: REVISION_CATEGORIES.find((c) => c.id === r.category),
+        categoryMeta: stages.find((c) => c.id === r.category) || REVISION_CATEGORIES.find((c) => c.id === r.category),
       }));
-  }, [records, effectiveTopics, subjects]);
+  }, [records, effectiveTopics, subjects, stages]);
 
   if (loading && subjects.length === 0) {
     return (
@@ -902,15 +917,15 @@ export function RevisionTrackerView() {
         <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Category Breakdown (6 Stages)
+              Category Breakdown ({stages.length} Stages)
             </span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800">
-              6 Categories
+              {stages.length} Categories
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {REVISION_CATEGORIES.map((cat) => {
-              const count = stats.categoryCounts[cat.id];
+            {stages.map((cat) => {
+              const count = stats.categoryCounts[cat.id] || 0;
               return (
                 <div
                   key={cat.id}
@@ -1181,16 +1196,17 @@ export function RevisionTrackerView() {
                               <th className="py-2.5 px-2 text-center w-[60px]">
                                 Status
                               </th>
-                              {/* Exact 6 Checkbox Columns in Exact Order */}
-                              {REVISION_CATEGORIES.map((cat) => (
+                              {/* Dynamic Checkbox Columns in Defined Order */}
+                              {stages.map((cat) => (
                                 <th
                                   key={cat.id}
+                                  data-slot="stage-header"
                                   className="py-2.5 px-2 text-center w-[95px]"
-                                  title={cat.description}
+                                  title={cat.description || cat.label}
                                 >
                                   <div className="flex flex-col items-center gap-0.5">
                                     <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                      {cat.shortLabel}
+                                      {cat.shortLabel || cat.label}
                                     </span>
                                   </div>
                                 </th>
@@ -1203,7 +1219,7 @@ export function RevisionTrackerView() {
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
                             {topics.map((topic) => {
                               const completedCount = getTopicProgress(topic.id);
-                              const isCompletedAll = completedCount === 6;
+                              const isCompletedAll = completedCount === stages.length;
 
                               return (
                                 <tr
@@ -1224,7 +1240,7 @@ export function RevisionTrackerView() {
                                     </div>
                                   </td>
 
-                                  {/* Overall Chapter Progress Indicator (0/6 to 6/6) */}
+                                  {/* Overall Chapter Progress Indicator */}
                                   <td className="py-2.5 px-2 text-center">
                                     <span
                                       className={`inline-block px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold tabular-nums ${
@@ -1235,12 +1251,12 @@ export function RevisionTrackerView() {
                                           : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                                       }`}
                                     >
-                                      {completedCount}/6
+                                      {completedCount}/{stages.length}
                                     </span>
                                   </td>
 
-                                  {/* Exact 6 Checkboxes in strict left-to-right column order */}
-                                  {REVISION_CATEGORIES.map((cat) => {
+                                  {/* Dynamic Checkboxes in Defined Order */}
+                                  {stages.map((cat) => {
                                     const rec = recordMap.get(
                                       `${topic.id}_${cat.id}`
                                     );
@@ -1524,11 +1540,11 @@ export function RevisionTrackerView() {
               </div>
 
               <div className="space-y-3">
-                {REVISION_CATEGORIES.map((cat) => {
-                  const count = stats.categoryCounts[cat.id];
+                {stages.map((cat) => {
+                  const count = stats.categoryCounts[cat.id] || 0;
                   const total = stats.totalChapters || 1;
                   const pct = Math.round((count / total) * 100);
-                  const Icon = CATEGORY_ICONS[cat.id];
+                  const Icon = CATEGORY_ICONS[cat.id] || Layers;
 
                   return (
                     <div key={cat.id} className="space-y-1">
@@ -1574,7 +1590,7 @@ export function RevisionTrackerView() {
                   {activeDetailItem.topic.title}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Category: <span className="font-semibold text-slate-700 dark:text-slate-300">{REVISION_CATEGORIES.find((c) => c.id === activeDetailItem.category)?.label}</span>
+                  Category: <span className="font-semibold text-slate-700 dark:text-slate-300">{(stages.find((c) => c.id === activeDetailItem.category) || REVISION_CATEGORIES.find((c) => c.id === activeDetailItem.category))?.label}</span>
                 </p>
               </div>
               <button
