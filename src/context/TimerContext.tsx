@@ -87,8 +87,10 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     return Math.max(0, activeTimer.targetDurationSeconds - timerElapsedSeconds);
   }, [activeTimer, timerElapsedSeconds]);
 
-  // Offline recovery queue processor: automatically sync queued study sessions on startup and when coming online
+  // Offline recovery queue processor: automatically sync queued study sessions on startup, login, and when coming online
   useEffect(() => {
+    if (!user) return;
+
     const syncOfflineStudySessions = async () => {
       if (typeof window === 'undefined') return;
       const queueKey = 'sp_unsaved_study_sessions';
@@ -102,15 +104,21 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         let syncedCount = 0;
         for (const item of queue) {
           try {
-            const { queuedAt, error, ...sessionPayload } = item;
+            const { queuedAt, error, attempts = 0, ...sessionPayload } = item;
             const res = await createStudySessionAction(sessionPayload);
             if (res && res.success) {
               syncedCount++;
             } else {
-              remaining.push(item);
+              remaining.push({ ...item, attempts: attempts + 1 });
             }
-          } catch {
-            remaining.push(item);
+          } catch (syncErr: any) {
+            const errMsg = syncErr?.message || '';
+            // If the subject does not exist or access is permanently denied, drop from queue after 3 retries
+            if (errMsg.includes('does not exist') || errMsg.includes('access denied') || (item.attempts && item.attempts >= 3)) {
+              console.error('Dropping unrecoverable offline session:', item, errMsg);
+            } else {
+              remaining.push({ ...item, attempts: (item.attempts || 0) + 1 });
+            }
           }
         }
 
@@ -136,7 +144,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     syncOfflineStudySessions();
     window.addEventListener('online', syncOfflineStudySessions);
     return () => window.removeEventListener('online', syncOfflineStudySessions);
-  }, [addToast, refreshWorkspace]);
+  }, [user, addToast, refreshWorkspace]);
 
   // Handle automatic Pomodoro phase completion
   useEffect(() => {
@@ -368,6 +376,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         return (res as any).session || null;
       } catch (err: any) {
         console.error('Failed to persist study session over network:', err);
+        let queueSaved = false;
         try {
           const queueKey = 'sp_unsaved_study_sessions';
           const rawQueue = localStorage.getItem(queueKey);
@@ -378,17 +387,26 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
             error: err.message || 'Network error',
           });
           localStorage.setItem(queueKey, JSON.stringify(queue));
+          queueSaved = true;
         } catch (queueErr) {
           console.error('Failed to write to sp_unsaved_study_sessions:', queueErr);
         }
 
-        await persistActiveTimer(null);
-
-        addToast({
-          title: 'Session Saved to Offline Queue',
-          description: 'Network issue detected. Session saved locally on device and will sync automatically.',
-          variant: 'error',
-        });
+        if (queueSaved) {
+          await persistActiveTimer(null);
+          addToast({
+            title: 'Session Saved to Offline Queue',
+            description: 'Network issue detected. Session saved locally on device and will sync automatically.',
+            variant: 'default',
+          });
+        } else {
+          // If queue saving failed, DO NOT wipe active timer! Retain it and alert the user so study time is never lost
+          addToast({
+            title: 'Failed to Save Study Session',
+            description: 'Network and offline storage both failed. Your timer has been kept active so you can retry.',
+            variant: 'error',
+          });
+        }
         return null;
       }
     },

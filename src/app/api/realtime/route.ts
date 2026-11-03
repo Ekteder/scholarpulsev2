@@ -49,12 +49,42 @@ export async function GET(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      const emitter = getRealtimeEmitter();
+
+      const cleanup = () => {
+        if (isClosed) return;
+        isClosed = true;
+        if (localListener) {
+          emitter.off(`user:${user.uid}`, localListener);
+          localListener = null;
+        }
+        if (adminListener) {
+          emitter.off(ADMIN_REALTIME_CHANNEL, adminListener);
+          adminListener = null;
+        }
+        if (intervalTimer) {
+          clearTimeout(intervalTimer);
+          intervalTimer = null;
+        }
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+        if (maxDurationTimer) {
+          clearTimeout(maxDurationTimer);
+          maxDurationTimer = null;
+        }
+        try {
+          controller.close();
+        } catch {}
+      };
+
       const safeEnqueue = (chunk: string) => {
         if (isClosed) return;
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          isClosed = true;
+          cleanup();
         }
       };
 
@@ -101,7 +131,6 @@ export async function GET(req: NextRequest) {
       }
 
       // 3. Fast In-Memory Listener for 0ms delivery within same worker process
-      const emitter = getRealtimeEmitter();
       localListener = (ev: RealtimeSyncEvent) => {
         if (isClosed) return;
         if (ev.id > lastSeenId) {
@@ -172,20 +201,7 @@ export async function GET(req: NextRequest) {
 
       // 6. Graceful closure at 55 seconds to prevent hard Vercel timeout errors
       maxDurationTimer = setTimeout(() => {
-        if (!isClosed) {
-          isClosed = true;
-          if (localListener) {
-            emitter.off(`user:${user.uid}`, localListener);
-          }
-          if (adminListener) {
-            emitter.off(ADMIN_REALTIME_CHANNEL, adminListener);
-          }
-          if (intervalTimer) clearInterval(intervalTimer);
-          if (heartbeatTimer) clearInterval(heartbeatTimer);
-          try {
-            controller.close();
-          } catch {}
-        }
+        cleanup();
       }, 55000);
     },
     cancel() {
@@ -193,13 +209,24 @@ export async function GET(req: NextRequest) {
       const emitter = getRealtimeEmitter();
       if (localListener) {
         emitter.off(`user:${user.uid}`, localListener);
+        localListener = null;
       }
       if (adminListener) {
         emitter.off(ADMIN_REALTIME_CHANNEL, adminListener);
+        adminListener = null;
       }
-      if (intervalTimer) clearInterval(intervalTimer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      if (maxDurationTimer) clearTimeout(maxDurationTimer);
+      if (intervalTimer) {
+        clearTimeout(intervalTimer);
+        intervalTimer = null;
+      }
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+      if (maxDurationTimer) {
+        clearTimeout(maxDurationTimer);
+        maxDurationTimer = null;
+      }
     },
   });
 

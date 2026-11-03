@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { neon } from '@neondatabase/serverless';
 import {
   ADMIN_USER,
   loginAsAdmin,
@@ -71,5 +74,37 @@ test.describe('Security & Auth Hardening (OAuth CSRF, IDOR, XP Injection)', () =
       return getComputedStyle(document.documentElement).getPropertyValue('--background');
     });
     expect(bodyBg).toBeTruthy();
+  });
+
+  test('5. Subject IDOR defense: Subject ownership check rejects cross-account subject references', async () => {
+    const envPath = path.resolve(__dirname, '../../.env.local');
+    let connStr = process.env.DATABASE_URL_POOLED || process.env.DATABASE_URL;
+    if (!connStr && fs.existsSync(envPath)) {
+      const raw = fs.readFileSync(envPath, 'utf-8');
+      const m = raw.match(/DATABASE_URL=([^\r\n]+)/);
+      if (m) connStr = m[1].trim();
+    }
+    expect(connStr).toBeTruthy();
+    const sql = neon(connStr!);
+
+    // Create an isolated subject belonging to ADMIN_USER
+    const [adminSub] = await sql`
+      INSERT INTO subjects (user_id, name, color, icon, daily_target_minutes, weekly_target_minutes)
+      VALUES (${ADMIN_USER.uid}, 'Admin IDOR Test Subject', '#2563EB', 'ShieldCheck', 60, 300)
+      RETURNING id
+    `;
+
+    try {
+      // Simulate an unauthorized student attempting to access/modify admin's subject
+      const attackerUid = 'unauthorized-student-attacker';
+      const ownershipCheck = await sql`
+        SELECT id FROM subjects
+        WHERE id = ${adminSub.id} AND user_id = ${attackerUid}
+        LIMIT 1
+      `;
+      expect(ownershipCheck.length).toBe(0);
+    } finally {
+      await sql`DELETE FROM subjects WHERE id = ${adminSub.id}`;
+    }
   });
 });

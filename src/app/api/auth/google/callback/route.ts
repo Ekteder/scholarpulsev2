@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeGoogleCodeForUser, createSession } from '@/lib/auth';
 
+function getTrustedBaseUrl(req: NextRequest): string {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/$/, '');
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://scholarpulsev2.vercel.app';
+  }
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000';
+  const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   const error = req.nextUrl.searchParams.get('error');
   const state = req.nextUrl.searchParams.get('state');
 
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
-  let baseUrl: string;
-  if (process.env.NODE_ENV === 'production' && configuredUrl) {
-    baseUrl = configuredUrl.replace(/\/$/, '');
-  } else {
-    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'scholarpulsev2.vercel.app';
-    const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
-    baseUrl = `${proto}://${host}`;
-  }
+  const baseUrl = getTrustedBaseUrl(req);
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
   // CSRF validation

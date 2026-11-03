@@ -12,5 +12,16 @@ if (!connectionString) {
   throw new Error('DATABASE_URL or DATABASE_URL_POOLED environment variable is not defined.');
 }
 
-export const pool = new Pool({ connectionString });
-export const db = drizzle(pool, { schema });
+const globalForDb = globalThis as unknown as {
+  pool?: Pool;
+  db?: ReturnType<typeof drizzle<typeof schema>>;
+};
+
+export const pool = globalForDb.pool ?? new Pool({ connectionString });
+export const db = globalForDb.db ?? drizzle(pool, { schema });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForDb.pool = pool;
+  globalForDb.db = db;
+}
+
