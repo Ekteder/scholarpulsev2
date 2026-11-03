@@ -123,16 +123,28 @@ export async function GET(req: NextRequest) {
         emitter.on(ADMIN_REALTIME_CHANNEL, adminListener);
       }
 
-      // 4. Polling function for cross-instance events from Neon PostgreSQL
+      // 4. Polling function for cross-instance events from Neon PostgreSQL with adaptive backoff
+      let currentIntervalMs = 2500;
+      let consecutiveEmptyPolls = 0;
+
       const pollDbEvents = async () => {
         if (isClosed) return;
         try {
           const events = await getSyncEventsForUser(user.uid, lastSeenId, 50, isAdmin);
-          for (const ev of events) {
-            if (isClosed) break;
-            if (ev.id > lastSeenId) {
-              lastSeenId = ev.id;
-              safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
+          if (events.length > 0) {
+            consecutiveEmptyPolls = 0;
+            currentIntervalMs = 2000;
+            for (const ev of events) {
+              if (isClosed) break;
+              if (ev.id > lastSeenId) {
+                lastSeenId = ev.id;
+                safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
+              }
+            }
+          } else {
+            consecutiveEmptyPolls++;
+            if (consecutiveEmptyPolls > 3) {
+              currentIntervalMs = Math.min(4000, currentIntervalMs + 500);
             }
           }
         } catch (err) {
@@ -140,11 +152,17 @@ export async function GET(req: NextRequest) {
         }
       };
 
+      const scheduleNextPoll = () => {
+        if (isClosed) return;
+        intervalTimer = setTimeout(async () => {
+          await pollDbEvents();
+          scheduleNextPoll();
+        }, currentIntervalMs);
+      };
+
       // Poll initially for any missed events since lastSeenId
       await pollDbEvents();
-
-      // Poll database every 1000ms for updates from other devices/instances
-      intervalTimer = setInterval(pollDbEvents, 1000);
+      scheduleNextPoll();
 
       // 5. Heartbeat every 15s to keep connection alive through proxies
       heartbeatTimer = setInterval(() => {

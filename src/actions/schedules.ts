@@ -5,6 +5,7 @@ import {
   createSchedule,
   updateSchedule,
   deleteSchedule,
+  verifyUserSubjectOwnership,
 } from '@/lib/db/repository';
 import { ScheduleSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
@@ -20,6 +21,12 @@ export async function createScheduleAction(raw: unknown) {
   const user = await requireUser();
   const parsed = ScheduleSchema.parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+  if (!isOwner) {
+    throw new Error('Subject not found or access denied.');
+  }
+
   const schedule = await createSchedule(user.uid, parsed);
 
   if (schedule) {
@@ -39,6 +46,14 @@ export async function updateScheduleAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = ScheduleSchema.partial().parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  if (parsed.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const schedule = await updateSchedule(user.uid, id, parsed);
 
   if (schedule) {

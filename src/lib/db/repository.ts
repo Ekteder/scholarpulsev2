@@ -23,6 +23,7 @@ import {
   tasks,
   userAchievements,
   userCurriculumCustomizations,
+  syncEvents,
 } from './schema';
 import {
   ensureCurriculumSeedData,
@@ -830,8 +831,8 @@ export async function restoreUserBackupTransactional(
   }
 ) {
   try {
-    const tx = db;
-    if (backup.mode === 'replace') {
+    await db.transaction(async (tx) => {
+      if (backup.mode === 'replace') {
         await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
         await tx.delete(studySessions).where(eq(studySessions.userId, userId));
         await tx.delete(tasks).where(eq(tasks.userId, userId));
@@ -899,7 +900,8 @@ export async function restoreUserBackupTransactional(
         }
       }
 
-      if (Array.isArray(backup.studySessions)) {
+      if (Array.isArray(backup.studySessions) && backup.studySessions.length > 0) {
+        const sessionValues = [];
         for (const sess of backup.studySessions) {
           const targetSubjectId = subjectIdMap.get(sess.subjectId);
           if (!targetSubjectId) continue;
@@ -910,7 +912,7 @@ export async function restoreUserBackupTransactional(
           );
           if (isNaN(durationSeconds) || durationSeconds <= 0) continue;
 
-          await tx.insert(studySessions).values({
+          sessionValues.push({
             userId,
             subjectId: targetSubjectId,
             startTime,
@@ -919,35 +921,43 @@ export async function restoreUserBackupTransactional(
             topic: String(sess.topic || 'Restored Session'),
             notes: String(sess.notes || ''),
             productivityRating: Number(sess.productivityRating) || 4,
-            sessionType: sess.sessionType === 'timer' ? 'timer' : 'manual',
+            sessionType: sess.sessionType === 'timer' ? ('timer' as const) : ('manual' as const),
           });
+        }
+        if (sessionValues.length > 0) {
+          await tx.insert(studySessions).values(sessionValues);
         }
       }
 
-      if (Array.isArray(backup.tasks)) {
+      if (Array.isArray(backup.tasks) && backup.tasks.length > 0) {
+        const taskValues = [];
         for (const t of backup.tasks) {
           const targetSubjectId = subjectIdMap.get(t.subjectId);
           if (!targetSubjectId) continue;
-          await tx.insert(tasks).values({
+          taskValues.push({
             userId,
             subjectId: targetSubjectId,
             title: String(t.title || 'Restored Task'),
             description: String(t.description || ''),
             dueDate: new Date(t.dueDate || Date.now()),
-            priority: ['low', 'medium', 'high'].includes(t.priority) ? t.priority : 'medium',
-            status: ['pending', 'in_progress', 'completed'].includes(t.status)
+            priority: (['low', 'medium', 'high'].includes(t.priority) ? t.priority : 'medium') as 'low' | 'medium' | 'high',
+            status: (['pending', 'in_progress', 'completed'].includes(t.status)
               ? t.status
-              : 'pending',
+              : 'pending') as 'pending' | 'in_progress' | 'completed',
             completedAt: t.completedAt ? new Date(t.completedAt) : null,
           });
         }
+        if (taskValues.length > 0) {
+          await tx.insert(tasks).values(taskValues);
+        }
       }
 
-      if (Array.isArray(backup.schedules)) {
+      if (Array.isArray(backup.schedules) && backup.schedules.length > 0) {
+        const scheduleValues = [];
         for (const sch of backup.schedules) {
           const targetSubjectId = subjectIdMap.get(sch.subjectId);
           if (!targetSubjectId) continue;
-          await tx.insert(schedules).values({
+          scheduleValues.push({
             userId,
             subjectId: targetSubjectId,
             dayOfWeek: Number(sch.dayOfWeek) || 0,
@@ -956,25 +966,33 @@ export async function restoreUserBackupTransactional(
             description: String(sch.description || ''),
           });
         }
+        if (scheduleValues.length > 0) {
+          await tx.insert(schedules).values(scheduleValues);
+        }
       }
 
-      if (Array.isArray(backup.goals)) {
+      if (Array.isArray(backup.goals) && backup.goals.length > 0) {
+        const goalValues = [];
         for (const g of backup.goals) {
           const targetSubjectId = g.subjectId ? subjectIdMap.get(g.subjectId) || null : null;
-          await tx.insert(goals).values({
+          goalValues.push({
             userId,
             subjectId: targetSubjectId,
             title: String(g.title || 'Restored Goal'),
-            goalType: String(g.goalType || 'daily'),
+            goalType: (g.goalType || 'daily') as any,
             targetValue: Number(g.targetValue) || 60,
             currentValue: 0,
-            unit: String(g.unit || 'minutes'),
+            unit: (g.unit || 'minutes') as any,
             startDate: String(g.startDate || new Date().toISOString().slice(0, 10)),
             endDate: String(g.endDate || new Date().toISOString().slice(0, 10)),
-            status: 'active',
+            status: 'active' as const,
           });
         }
+        if (goalValues.length > 0) {
+          await tx.insert(goals).values(goalValues);
+        }
       }
+    });
 
     await recalculateGoalsAndAchievements(userId);
   } catch (error: any) {
@@ -988,26 +1006,28 @@ export async function restoreUserBackupTransactional(
  */
 export async function deleteUserAccountTransactional(userId: string) {
   try {
-    const tx = db;
-    await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
-    await tx.delete(userAchievements).where(eq(userAchievements.userId, userId));
-    await tx.delete(studySessions).where(eq(studySessions.userId, userId));
-    await tx.delete(tasks).where(eq(tasks.userId, userId));
-    await tx.delete(schedules).where(eq(schedules.userId, userId));
-    await tx.delete(goals).where(eq(goals.userId, userId));
-    await tx.delete(subjects).where(eq(subjects.userId, userId));
-    await tx.delete(revisionRecords).where(eq(revisionRecords.userId, userId));
-    await tx
-      .delete(userCurriculumCustomizations)
-      .where(eq(userCurriculumCustomizations.userId, userId));
-    await tx.delete(curriculumResources).where(eq(curriculumResources.userId, userId));
-    await tx.delete(curriculumTopics).where(eq(curriculumTopics.userId, userId));
-    await tx.delete(curriculumPapers).where(eq(curriculumPapers.userId, userId));
-    await tx.delete(curriculumSubjects).where(eq(curriculumSubjects.userId, userId));
-    await tx
-      .delete(notificationPreferences)
-      .where(eq(notificationPreferences.userId, userId));
-    await tx.delete(profiles).where(eq(profiles.userId, userId));
+    await db.transaction(async (tx) => {
+      await tx.delete(syncEvents).where(eq(syncEvents.userId, userId));
+      await tx.delete(activeTimerSessions).where(eq(activeTimerSessions.userId, userId));
+      await tx.delete(userAchievements).where(eq(userAchievements.userId, userId));
+      await tx.delete(studySessions).where(eq(studySessions.userId, userId));
+      await tx.delete(tasks).where(eq(tasks.userId, userId));
+      await tx.delete(schedules).where(eq(schedules.userId, userId));
+      await tx.delete(goals).where(eq(goals.userId, userId));
+      await tx.delete(subjects).where(eq(subjects.userId, userId));
+      await tx.delete(revisionRecords).where(eq(revisionRecords.userId, userId));
+      await tx
+        .delete(userCurriculumCustomizations)
+        .where(eq(userCurriculumCustomizations.userId, userId));
+      await tx.delete(curriculumResources).where(eq(curriculumResources.userId, userId));
+      await tx.delete(curriculumTopics).where(eq(curriculumTopics.userId, userId));
+      await tx.delete(curriculumPapers).where(eq(curriculumPapers.userId, userId));
+      await tx.delete(curriculumSubjects).where(eq(curriculumSubjects.userId, userId));
+      await tx
+        .delete(notificationPreferences)
+        .where(eq(notificationPreferences.userId, userId));
+      await tx.delete(profiles).where(eq(profiles.userId, userId));
+    });
   } catch (error) {
     console.error('Database error in deleteUserAccountTransactional:', error);
     throw new Error('Failed to delete account data.', { cause: error });
@@ -1645,6 +1665,20 @@ export const updateStudySession = updateStudySessionTransactional;
 export const deleteStudySession = deleteStudySessionTransactional;
 
 // ==============================================================================
+// SUBJECT OWNERSHIP VALIDATION HELPER (IDOR PREVENTION)
+// ==============================================================================
+
+export async function verifyUserSubjectOwnership(userId: string, subjectId: string): Promise<boolean> {
+  if (!userId || !subjectId) return false;
+  const [ownedSubject] = await db
+    .select({ id: subjects.id })
+    .from(subjects)
+    .where(and(eq(subjects.id, subjectId), eq(subjects.userId, userId)))
+    .limit(1);
+  return Boolean(ownedSubject);
+}
+
+// ==============================================================================
 // TASK CRUD OPERATIONS
 // ==============================================================================
 
@@ -1659,6 +1693,11 @@ export async function createTask(
     status?: 'pending' | 'in_progress' | 'completed';
   }
 ) {
+  const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+  if (!isOwner) {
+    throw new Error('Subject not found or access denied.');
+  }
+
   const [created] = await db
     .insert(tasks)
     .values({
@@ -1690,6 +1729,13 @@ export async function updateTask(
     status: 'pending' | 'in_progress' | 'completed';
   }>
 ) {
+  if (data.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const updatePayload: Record<string, unknown> = {
     ...data,
     updatedAt: new Date(),
@@ -1733,6 +1779,11 @@ export async function createSchedule(
     description?: string;
   }
 ) {
+  const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+  if (!isOwner) {
+    throw new Error('Subject not found or access denied.');
+  }
+
   const [created] = await db
     .insert(schedules)
     .values({
@@ -1760,6 +1811,13 @@ export async function updateSchedule(
     description: string;
   }>
 ) {
+  if (data.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const [updated] = await db
     .update(schedules)
     .set({
@@ -1797,6 +1855,13 @@ export async function createGoal(
     status?: 'active' | 'completed' | 'expired';
   }
 ) {
+  if (data.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const [created] = await db
     .insert(goals)
     .values({
@@ -1832,6 +1897,13 @@ export async function updateGoal(
     status: 'active' | 'completed' | 'expired';
   }>
 ) {
+  if (data.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(userId, data.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const [updated] = await db
     .update(goals)
     .set({

@@ -6,7 +6,10 @@ import { db } from './db/index';
 import { profiles, adminAllowlist } from './db/schema';
 import { eq } from 'drizzle-orm';
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'scholarpulse-v2-super-secure-production-secret-key-32chars';
+const AUTH_SECRET = process.env.AUTH_SECRET;
+if (!AUTH_SECRET || AUTH_SECRET.length < 32) {
+  throw new Error('Fatal: AUTH_SECRET environment variable is missing or less than 32 characters.');
+}
 const SECRET_KEY = new TextEncoder().encode(AUTH_SECRET);
 const COOKIE_NAME = 'sp_session';
 
@@ -18,7 +21,7 @@ export interface SessionUser {
   isBanned?: boolean;
 }
 
-export function getGoogleOAuthURL(redirectUri: string) {
+export function getGoogleOAuthURL(redirectUri: string, state?: string) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     throw new Error('Missing GOOGLE_CLIENT_ID environment variable.');
@@ -31,6 +34,9 @@ export function getGoogleOAuthURL(redirectUri: string) {
     prompt: 'select_account',
     access_type: 'offline',
   });
+  if (state) {
+    params.set('state', state);
+  }
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 

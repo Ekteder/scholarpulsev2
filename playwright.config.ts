@@ -1,4 +1,14 @@
 import { defineConfig } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+
+// Load .env.local and .env into process.env for test worker processes
+if (typeof process.loadEnvFile === 'function') {
+  const envLocal = path.resolve(__dirname, '.env.local');
+  if (fs.existsSync(envLocal)) process.loadEnvFile(envLocal);
+  const env = path.resolve(__dirname, '.env');
+  if (fs.existsSync(env)) process.loadEnvFile(env);
+}
 
 /**
  * Playwright E2E & Responsive Test Suite Configuration for ScholarPulse v2

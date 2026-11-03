@@ -87,6 +87,57 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     return Math.max(0, activeTimer.targetDurationSeconds - timerElapsedSeconds);
   }, [activeTimer, timerElapsedSeconds]);
 
+  // Offline recovery queue processor: automatically sync queued study sessions on startup and when coming online
+  useEffect(() => {
+    const syncOfflineStudySessions = async () => {
+      if (typeof window === 'undefined') return;
+      const queueKey = 'sp_unsaved_study_sessions';
+      try {
+        const rawQueue = localStorage.getItem(queueKey);
+        if (!rawQueue) return;
+        const queue = JSON.parse(rawQueue);
+        if (!Array.isArray(queue) || queue.length === 0) return;
+
+        const remaining = [];
+        let syncedCount = 0;
+        for (const item of queue) {
+          try {
+            const { queuedAt, error, ...sessionPayload } = item;
+            const res = await createStudySessionAction(sessionPayload);
+            if (res && res.success) {
+              syncedCount++;
+            } else {
+              remaining.push(item);
+            }
+          } catch {
+            remaining.push(item);
+          }
+        }
+
+        if (remaining.length > 0) {
+          localStorage.setItem(queueKey, JSON.stringify(remaining));
+        } else {
+          localStorage.removeItem(queueKey);
+        }
+
+        if (syncedCount > 0) {
+          addToast({
+            title: 'Offline Sessions Synced',
+            description: `Successfully uploaded ${syncedCount} study session(s).`,
+            variant: 'success',
+          });
+          await refreshWorkspace();
+        }
+      } catch (err) {
+        console.error('Failed to sync offline sessions:', err);
+      }
+    };
+
+    syncOfflineStudySessions();
+    window.addEventListener('online', syncOfflineStudySessions);
+    return () => window.removeEventListener('online', syncOfflineStudySessions);
+  }, [addToast, refreshWorkspace]);
+
   // Handle automatic Pomodoro phase completion
   useEffect(() => {
     if (
@@ -290,20 +341,20 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         clientDeviceId: getClientDeviceId(),
       };
 
-      await persistActiveTimer(null);
-
-      if (data?.notificationPreferences?.soundChimesEnabled !== false) {
-        playTimerChime('focus_end');
-      }
-
-      addToast({
-        title: 'Study Session Saved',
-        description: `Recorded ${Math.max(1, Math.round(finalDurationSeconds / 60))} minutes of study.`,
-        variant: 'success',
-      });
-
       try {
         const res = await createStudySessionAction(payload);
+        await persistActiveTimer(null);
+
+        if (data?.notificationPreferences?.soundChimesEnabled !== false) {
+          playTimerChime('focus_end');
+        }
+
+        addToast({
+          title: 'Study Session Saved',
+          description: `Recorded ${Math.max(1, Math.round(finalDurationSeconds / 60))} minutes of study.`,
+          variant: 'success',
+        });
+
         if (res.success && (res as any).newlyUnlockedAchievements?.length > 0) {
           for (const achTitle of (res as any).newlyUnlockedAchievements) {
             addToast({
@@ -316,9 +367,26 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         await refreshWorkspace();
         return (res as any).session || null;
       } catch (err: any) {
+        console.error('Failed to persist study session over network:', err);
+        try {
+          const queueKey = 'sp_unsaved_study_sessions';
+          const rawQueue = localStorage.getItem(queueKey);
+          const queue = rawQueue ? JSON.parse(rawQueue) : [];
+          queue.push({
+            ...payload,
+            queuedAt: new Date().toISOString(),
+            error: err.message || 'Network error',
+          });
+          localStorage.setItem(queueKey, JSON.stringify(queue));
+        } catch (queueErr) {
+          console.error('Failed to write to sp_unsaved_study_sessions:', queueErr);
+        }
+
+        await persistActiveTimer(null);
+
         addToast({
-          title: 'Could Not Save Session',
-          description: err.message || 'Please check your connection and try again.',
+          title: 'Session Saved to Offline Queue',
+          description: 'Network issue detected. Session saved locally on device and will sync automatically.',
           variant: 'error',
         });
         return null;

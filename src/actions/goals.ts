@@ -5,6 +5,7 @@ import {
   createGoal,
   updateGoal,
   deleteGoal,
+  verifyUserSubjectOwnership,
 } from '@/lib/db/repository';
 import { GoalSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
@@ -20,6 +21,14 @@ export async function createGoalAction(raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  if (parsed.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const goal = await createGoal(user.uid, parsed);
 
   if (goal) {
@@ -39,6 +48,14 @@ export async function updateGoalAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = GoalSchema.partial().parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  if (parsed.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const goal = await updateGoal(user.uid, id, parsed);
 
   if (goal) {

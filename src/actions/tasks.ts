@@ -5,6 +5,7 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  verifyUserSubjectOwnership,
 } from '@/lib/db/repository';
 import { TaskSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
@@ -20,6 +21,12 @@ export async function createTaskAction(raw: unknown) {
   const user = await requireUser();
   const parsed = TaskSchema.parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+  if (!isOwner) {
+    throw new Error('Subject not found or access denied.');
+  }
+
   const task = await createTask(user.uid, {
     ...parsed,
     dueDate: new Date(parsed.dueDate),
@@ -42,6 +49,14 @@ export async function updateTaskAction(id: string, raw: unknown) {
   const user = await requireUser();
   const parsed = TaskSchema.partial().parse(raw);
   const clientDeviceId = (raw as any)?.clientDeviceId;
+
+  if (parsed.subjectId) {
+    const isOwner = await verifyUserSubjectOwnership(user.uid, parsed.subjectId);
+    if (!isOwner) {
+      throw new Error('Subject not found or access denied.');
+    }
+  }
+
   const task = await updateTask(user.uid, id, {
     ...parsed,
     dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,

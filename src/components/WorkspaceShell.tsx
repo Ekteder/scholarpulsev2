@@ -115,7 +115,6 @@ export function WorkspaceShell() {
 
   const { theme, resolvedTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [visitedTabs, setVisitedTabs] = useState<Set<NavigationTab>>(() => new Set([activeTab]));
   const [isAdmin, setIsAdmin] = useState(false);
   const announcementText = data?.announcementBanner?.trim() || '';
   const targetedAnnouncementText = (data?.targetedAnnouncement || data?.profile?.targetedAnnouncement || '').trim();
@@ -183,15 +182,6 @@ export function WorkspaceShell() {
       setActiveTab(resolvedTab);
     }
   }, [setActiveTab]);
-
-  React.useEffect(() => {
-    setVisitedTabs((prev) => {
-      if (prev.has(activeTab)) return prev;
-      const next = new Set(prev);
-      next.add(activeTab);
-      return next;
-    });
-  }, [activeTab]);
 
   // Preload views in background
   React.useEffect(() => {
@@ -677,61 +667,21 @@ export function WorkspaceShell() {
               </div>
             }
           >
-            {visitedTabs.has('dashboard') && (
-              <div className={activeTab === 'dashboard' ? 'block' : 'hidden'}>
-                <DashboardView />
-              </div>
-            )}
-            {visitedTabs.has('tracker') && (
-              <div className={activeTab === 'tracker' ? 'block' : 'hidden'}>
-                <StudyTrackerView />
-              </div>
-            )}
-            {visitedTabs.has('timer') && (
+            {activeTab === 'dashboard' && <DashboardView />}
+            {activeTab === 'tracker' && <StudyTrackerView />}
+            {(activeTab === 'timer' || Boolean(activeTimer)) && (
               <div className={activeTab === 'timer' ? 'block' : 'hidden'}>
                 <StudyTimerView />
               </div>
             )}
-            {visitedTabs.has('revision') && (
-              <div className={activeTab === 'revision' ? 'block' : 'hidden'}>
-                <RevisionTrackerView />
-              </div>
-            )}
-            {visitedTabs.has('subjects') && (
-              <div className={activeTab === 'subjects' ? 'block' : 'hidden'}>
-                <SubjectsView />
-              </div>
-            )}
-            {visitedTabs.has('schedule') && (
-              <div className={activeTab === 'schedule' ? 'block' : 'hidden'}>
-                <ScheduleAndTasksView />
-              </div>
-            )}
-            {visitedTabs.has('goals') && (
-              <div className={activeTab === 'goals' ? 'block' : 'hidden'}>
-                <GoalsView />
-              </div>
-            )}
-            {visitedTabs.has('analytics') && (
-              <div className={activeTab === 'analytics' ? 'block' : 'hidden'}>
-                <AnalyticsView />
-              </div>
-            )}
-            {visitedTabs.has('history') && (
-              <div className={activeTab === 'history' ? 'block' : 'hidden'}>
-                <StudyHistoryView />
-              </div>
-            )}
-            {visitedTabs.has('achievements') && (
-              <div className={activeTab === 'achievements' ? 'block' : 'hidden'}>
-                <AchievementsView />
-              </div>
-            )}
-            {visitedTabs.has('settings') && (
-              <div className={activeTab === 'settings' ? 'block' : 'hidden'}>
-                <SettingsView />
-              </div>
-            )}
+            {activeTab === 'revision' && <RevisionTrackerView />}
+            {activeTab === 'subjects' && <SubjectsView />}
+            {activeTab === 'schedule' && <ScheduleAndTasksView />}
+            {activeTab === 'goals' && <GoalsView />}
+            {activeTab === 'analytics' && <AnalyticsView />}
+            {activeTab === 'history' && <StudyHistoryView />}
+            {activeTab === 'achievements' && <AchievementsView />}
+            {activeTab === 'settings' && <SettingsView />}
           </React.Suspense>
         </main>
 

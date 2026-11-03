@@ -34,7 +34,6 @@ export const ProfileUpdateSchema = z.object({
   pomodoroLongBreakInterval: z.number().int().min(1).max(12).optional(),
   targetExamName: z.string().max(100).optional(),
   targetExamDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  gamificationXp: z.number().int().min(0).optional(),
 });
 
 export const NotificationPreferencesSchema = z.object({
