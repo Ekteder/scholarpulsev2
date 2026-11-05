@@ -1950,6 +1950,7 @@ export async function upsertActiveTimer(
     startedAt: Date;
     lastResumedAt: Date;
     accumulatedSeconds?: number;
+    totalFocusSeconds?: number;
     targetDurationSeconds?: number;
     completedPomodoros?: number;
     stateVersion?: number;
@@ -1970,6 +1971,7 @@ export async function upsertActiveTimer(
       startedAt: data.startedAt,
       lastResumedAt: data.lastResumedAt,
       accumulatedSeconds: data.accumulatedSeconds ?? 0,
+      totalFocusSeconds: data.totalFocusSeconds ?? 0,
       targetDurationSeconds: data.targetDurationSeconds ?? 1500,
       completedPomodoros: data.completedPomodoros ?? 0,
       stateVersion: data.stateVersion ?? 1,
@@ -1989,6 +1991,7 @@ export async function upsertActiveTimer(
         startedAt: data.startedAt,
         lastResumedAt: data.lastResumedAt,
         accumulatedSeconds: data.accumulatedSeconds ?? 0,
+        totalFocusSeconds: data.totalFocusSeconds ?? 0,
         targetDurationSeconds: data.targetDurationSeconds ?? 1500,
         completedPomodoros: data.completedPomodoros ?? 0,
         stateVersion: data.stateVersion ?? 1,

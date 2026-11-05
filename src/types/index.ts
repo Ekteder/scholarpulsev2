@@ -68,6 +68,7 @@ export interface ActiveTimerSession {
   startedAt: string | Date;
   lastResumedAt: string | Date;
   accumulatedSeconds: number;
+  totalFocusSeconds?: number;
   targetDurationSeconds: number;
   completedPomodoros: number;
   stateVersion: number;

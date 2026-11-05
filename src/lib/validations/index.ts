@@ -80,6 +80,7 @@ export const ActiveTimerSyncSchema = z.object({
   startedAt: z.string().or(z.date()),
   lastResumedAt: z.string().or(z.date()),
   accumulatedSeconds: z.number().int().min(0).default(0),
+  totalFocusSeconds: z.number().int().min(0).default(0),
   targetDurationSeconds: z.number().int().min(0).default(1500),
   completedPomodoros: z.number().int().min(0).default(0),
   stateVersion: z.number().int().default(1),

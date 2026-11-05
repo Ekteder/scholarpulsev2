@@ -28,6 +28,7 @@ export function StudyTimerView() {
     activeTimer,
     timerElapsedSeconds,
     timerRemainingSeconds,
+    timerTotalFocusSeconds,
     recoveredSessionNotice,
     dismissRecoveredNotice,
     startTimer,
@@ -517,7 +518,7 @@ export function StudyTimerView() {
                 </div>
               )}
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                Elapsed Focus Time: {formatDurationHuman(timerElapsedSeconds, true)}
+                Elapsed Focus Time: {formatDurationHuman(timerTotalFocusSeconds, true)}
               </p>
             </div>
           )}

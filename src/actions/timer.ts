@@ -90,7 +90,6 @@ export async function completePomodoroPhaseAction({
   const { db } = await import('@/lib/db');
   const { profiles } = await import('@/lib/db/schema');
   const { eq } = await import('drizzle-orm');
-  const { createStudySession } = await import('@/lib/db/repository');
 
   const [profile] = await db
     .select()
@@ -103,33 +102,20 @@ export async function completePomodoroPhaseAction({
   const longBreakInterval = profile?.pomodoroLongBreakInterval || 4;
 
   const now = new Date();
-  let createdSession: any = null;
   let nextPhase: 'focus' | 'short_break' | 'long_break';
   let nextCompletedPomodoros = current.completedPomodoros;
   let nextTargetDuration = focusMins * 60;
+  let nextTotalFocusSeconds = current.totalFocusSeconds || 0;
 
   if (completedPhase === 'focus') {
-    const focusDurationSec = current.targetDurationSeconds;
-    const startTime = new Date(now.getTime() - focusDurationSec * 1000);
-    const cycleIdempotencyKey = `${current.idempotencyKey}_pomo_${completedPomodoros + 1}`;
-
-    const sessionRes = await createStudySession(user.uid, {
-      subjectId: current.subjectId,
-      startTime,
-      endTime: now,
-      topic: current.topic,
-      notes: current.notes || 'Pomodoro focus cycle completed',
-      productivityRating: 5,
-      sessionType: 'timer',
-      idempotencyKey: cycleIdempotencyKey,
-    });
-    createdSession = sessionRes.session;
-
+    // Accumulate completed focus duration into totalFocusSeconds across this pomodoro cycle
+    nextTotalFocusSeconds += current.targetDurationSeconds;
     nextCompletedPomodoros = completedPomodoros + 1;
     const isLongBreak = nextCompletedPomodoros % longBreakInterval === 0;
     nextPhase = isLongBreak ? 'long_break' : 'short_break';
     nextTargetDuration = (isLongBreak ? longBreakMins : shortBreakMins) * 60;
   } else {
+    // Break completed -> Return to focus phase without modifying totalFocusSeconds
     nextPhase = 'focus';
     nextTargetDuration = focusMins * 60;
   }
@@ -144,6 +130,7 @@ export async function completePomodoroPhaseAction({
     startedAt: now,
     lastResumedAt: now,
     accumulatedSeconds: 0,
+    totalFocusSeconds: nextTotalFocusSeconds,
     targetDurationSeconds: nextTargetDuration,
     completedPomodoros: nextCompletedPomodoros,
     stateVersion: (current.stateVersion || 1) + 1,
@@ -152,15 +139,6 @@ export async function completePomodoroPhaseAction({
   });
 
   const nextTimer = updateRes.timer;
-
-  if (createdSession) {
-    await publishSyncEvent({
-      userId: user.uid,
-      eventType: 'session:create',
-      payload: { session: createdSession },
-      clientDeviceId,
-    });
-  }
 
   if (nextTimer) {
     await publishSyncEvent({
@@ -175,7 +153,7 @@ export async function completePomodoroPhaseAction({
     success: true,
     alreadyTransitioned: false,
     timer: nextTimer,
-    session: createdSession,
+    session: null,
   };
 }
 

@@ -107,6 +107,7 @@ export const activeTimerSessions = pgTable(
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     lastResumedAt: timestamp('last_resumed_at', { withTimezone: true }).notNull(),
     accumulatedSeconds: integer('accumulated_seconds').notNull().default(0),
+    totalFocusSeconds: integer('total_focus_seconds').notNull().default(0),
     targetDurationSeconds: integer('target_duration_seconds').notNull().default(1500),
     completedPomodoros: integer('completed_pomodoros').notNull().default(0),
     stateVersion: integer('state_version').notNull().default(1),

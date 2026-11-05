@@ -20,6 +20,7 @@ export interface TimerContextValue {
   activeTimer: ActiveTimerSession | null;
   timerElapsedSeconds: number;
   timerRemainingSeconds: number;
+  timerTotalFocusSeconds: number;
   recoveredSessionNotice: boolean;
   dismissRecoveredNotice: () => void;
   startTimer: (opts: {
@@ -86,6 +87,27 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     if (!activeTimer || activeTimer.mode !== 'pomodoro') return 0;
     return Math.max(0, activeTimer.targetDurationSeconds - timerElapsedSeconds);
   }, [activeTimer, timerElapsedSeconds]);
+
+  const computeTotalFocusSeconds = useCallback(
+    (timer: ActiveTimerSession | null): number => {
+      if (!timer) return 0;
+      if (timer.mode === 'stopwatch') {
+        return computeElapsedSeconds(timer);
+      }
+      const accumulatedCycle = timer.totalFocusSeconds || 0;
+      if (timer.phase === 'focus') {
+        return Math.max(0, accumulatedCycle + computeElapsedSeconds(timer));
+      }
+      // During break (short_break or long_break):
+      // Return accumulated focus time from completed focus intervals. Break time is NEVER counted towards study time.
+      return Math.max(0, accumulatedCycle);
+    },
+    [computeElapsedSeconds]
+  );
+
+  const timerTotalFocusSeconds = useMemo(() => {
+    return computeTotalFocusSeconds(activeTimer);
+  }, [activeTimer, computeTotalFocusSeconds, timerElapsedSeconds]);
 
   // Offline recovery queue processor: automatically sync queued study sessions on startup, login, and when coming online
   useEffect(() => {
@@ -256,6 +278,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         startedAt: nowIso,
         lastResumedAt: nowIso,
         accumulatedSeconds: 0,
+        totalFocusSeconds: 0,
         targetDurationSeconds: targetDuration,
         completedPomodoros: 0,
         stateVersion: 1,
@@ -322,7 +345,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     }): Promise<StudySession | null> => {
       if (!activeTimer) return null;
 
-      const finalDurationSeconds = computeElapsedSeconds(activeTimer);
+      const finalDurationSeconds = computeTotalFocusSeconds(activeTimer);
       if (finalDurationSeconds < 30) {
         addToast({
           title: 'Session Discarded',
@@ -412,7 +435,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     },
     [
       activeTimer,
-      computeElapsedSeconds,
+      computeTotalFocusSeconds,
       persistActiveTimer,
       refreshWorkspace,
       data?.notificationPreferences?.soundChimesEnabled,
@@ -438,6 +461,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     const nowIso = new Date().toISOString();
 
     if (activeTimer.phase === 'focus') {
+      const currentFocusElapsed = computeElapsedSeconds(activeTimer);
+      const nextTotalFocusSeconds = (activeTimer.totalFocusSeconds || 0) + currentFocusElapsed;
       const nextTimer: ActiveTimerSession = {
         ...activeTimer,
         phase: 'short_break',
@@ -445,6 +470,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         startedAt: nowIso,
         lastResumedAt: nowIso,
         accumulatedSeconds: 0,
+        totalFocusSeconds: nextTotalFocusSeconds,
         targetDurationSeconds: shortBreakMins * 60,
         stateVersion: (activeTimer.stateVersion || 1) + 1,
       };
@@ -457,18 +483,20 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         startedAt: nowIso,
         lastResumedAt: nowIso,
         accumulatedSeconds: 0,
+        totalFocusSeconds: activeTimer.totalFocusSeconds || 0,
         targetDurationSeconds: focusMins * 60,
         stateVersion: (activeTimer.stateVersion || 1) + 1,
       };
       await persistActiveTimer(nextTimer);
     }
-  }, [activeTimer, data?.profile, persistActiveTimer]);
+  }, [activeTimer, data?.profile, computeElapsedSeconds, persistActiveTimer]);
 
   const value = useMemo(
     () => ({
       activeTimer,
       timerElapsedSeconds,
       timerRemainingSeconds,
+      timerTotalFocusSeconds,
       recoveredSessionNotice,
       dismissRecoveredNotice,
       startTimer,
@@ -482,6 +510,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       activeTimer,
       timerElapsedSeconds,
       timerRemainingSeconds,
+      timerTotalFocusSeconds,
       recoveredSessionNotice,
       dismissRecoveredNotice,
       startTimer,

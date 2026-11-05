@@ -22,6 +22,7 @@ export async function seedActiveTimerForUser(
     mode?: 'stopwatch' | 'pomodoro';
     subjectName?: string;
     topic?: string;
+    totalFocusSeconds?: number;
   }
 ) {
   const sql = getDbSql();
@@ -31,6 +32,7 @@ export async function seedActiveTimerForUser(
   if (mode === 'pomodoro') {
     targetDurationSeconds = phase === 'long_break' ? Math.max(1800, elapsedSeconds + 600) : phase === 'short_break' ? Math.max(300, elapsedSeconds + 300) : Math.max(1500, elapsedSeconds + 3600);
   }
+  const totalFocusSeconds = options?.totalFocusSeconds ?? (phase !== 'focus' ? 1500 : 0);
   const desiredSubjectName = options?.subjectName;
 
   // 1. Ensure user has a subject
@@ -69,13 +71,13 @@ export async function seedActiveTimerForUser(
   await sql`
     INSERT INTO active_timer_sessions (
       user_id, subject_id, topic, notes, mode, phase, status,
-      started_at, last_resumed_at, accumulated_seconds, target_duration_seconds,
+      started_at, last_resumed_at, accumulated_seconds, total_focus_seconds, target_duration_seconds,
       completed_pomodoros, state_version, idempotency_key, updated_at
     )
     VALUES (
       ${userId}, ${subjectId}, ${options?.topic || 'Quantum Mechanics'}, 'Notes for test', ${mode}, ${phase}, 'running',
-      ${startedAt}, ${lastResumedAt}, ${elapsedSeconds}, ${targetDurationSeconds},
-      0, 1, ${idempotencyKey}, NOW()
+      ${startedAt}, ${lastResumedAt}, ${elapsedSeconds}, ${totalFocusSeconds}, ${targetDurationSeconds},
+      ${options?.phase !== 'focus' ? 1 : 0}, 1, ${idempotencyKey}, NOW()
     )
     ON CONFLICT (user_id) DO UPDATE SET
       subject_id = EXCLUDED.subject_id,
@@ -87,7 +89,9 @@ export async function seedActiveTimerForUser(
       started_at = EXCLUDED.started_at,
       last_resumed_at = EXCLUDED.last_resumed_at,
       accumulated_seconds = EXCLUDED.accumulated_seconds,
+      total_focus_seconds = EXCLUDED.total_focus_seconds,
       target_duration_seconds = EXCLUDED.target_duration_seconds,
+      completed_pomodoros = EXCLUDED.completed_pomodoros,
       idempotency_key = EXCLUDED.idempotency_key,
       updated_at = NOW()
   `;
