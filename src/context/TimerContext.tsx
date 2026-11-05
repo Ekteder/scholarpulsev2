@@ -308,6 +308,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
             mode: newTimer.mode,
             targetDurationSeconds: newTimer.targetDurationSeconds,
             idempotencyKey: newTimer.idempotencyKey,
+            accumulatedSeconds: 0,
+            phase: newTimer.phase || 'focus',
           });
         } catch (bridgeErr) {
           console.warn('[TimerContext] Failed to start native foreground timer:', bridgeErr);
@@ -654,6 +656,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       pauseForegroundTimer().catch(() => {});
     } else if (activeTimer.status === 'running') {
       // If running (started on web or resumed on web), ensure native notification is active
+      const currentElapsed = computeElapsedSeconds(activeTimer);
       startForegroundTimer({
         subjectId: activeTimer.subjectId,
         topic: activeTimer.topic,
@@ -661,6 +664,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         mode: activeTimer.mode,
         targetDurationSeconds: activeTimer.targetDurationSeconds,
         idempotencyKey: activeTimer.idempotencyKey,
+        accumulatedSeconds: currentElapsed,
+        phase: activeTimer.phase || 'focus',
       }).catch(() => {});
     }
   }, [
@@ -672,6 +677,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     activeTimer?.notes,
     activeTimer?.mode,
     activeTimer?.targetDurationSeconds,
+    activeTimer?.phase,
+    computeElapsedSeconds,
     startForegroundTimer,
     pauseForegroundTimer,
     stopForegroundTimer,

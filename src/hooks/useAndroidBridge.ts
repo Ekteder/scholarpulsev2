@@ -44,6 +44,8 @@ export interface StartForegroundTimerParams {
   mode: 'stopwatch' | 'pomodoro' | string;
   targetDurationSeconds: number;
   idempotencyKey: string;
+  accumulatedSeconds?: number;
+  phase?: string;
 }
 
 export interface StopForegroundTimerParams {
