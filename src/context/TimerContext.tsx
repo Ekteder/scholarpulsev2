@@ -432,7 +432,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
             await stopForegroundTimer({
               productivityRating: payload.productivityRating,
               notes: payload.notes,
-              discard: false,
+              discard: true, // Prevent native Android from re-queueing a duplicate to Room
             });
           } catch (bridgeErr) {
             console.warn('[TimerContext] Failed to stop native timer:', bridgeErr);
@@ -485,7 +485,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
               await stopForegroundTimer({
                 productivityRating: payload.productivityRating,
                 notes: payload.notes,
-                discard: false,
+                discard: true, // Prevent native Android from re-queueing a duplicate to Room
               });
             } catch (bridgeErr) {
               console.warn('[TimerContext] Failed to stop native timer on offline save:', bridgeErr);
@@ -645,8 +645,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isNativeApp) return;
     if (!activeTimer) {
-      // If timer was saved or reset on the web, dismiss the native Android notification
-      stopForegroundTimer({ discard: false }).catch(() => {});
+      // Session is already completed or cleared on server; dismiss native notification without double-saving
+      stopForegroundTimer({ discard: true }).catch(() => {});
       return;
     }
     if (activeTimer.status === 'paused') {
