@@ -171,3 +171,5 @@ export const CurriculumResourceSchema = z.object({
   notes: z.string().max(1000).optional().default(''),
 });
 
+export * from './sync';
+

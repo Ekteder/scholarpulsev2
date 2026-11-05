@@ -514,7 +514,12 @@ export function WorkspaceShell() {
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
-        <header className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:pb-3.5 w-full min-w-0">
+        <header
+          style={{
+            paddingTop: 'max(var(--sat, env(safe-area-inset-top, 0px)), 0.625rem)',
+          }}
+          className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 pl-[max(var(--sal,env(safe-area-inset-left,0px)),0.75rem)] pr-[max(var(--sar,env(safe-area-inset-right,0px)),0.75rem)] sm:pl-[max(var(--sal,env(safe-area-inset-left,0px)),1.5rem)] sm:pr-[max(var(--sar,env(safe-area-inset-right,0px)),1.5rem)] pt-[max(var(--sat,env(safe-area-inset-top,0px)),0.625rem)] pb-2.5 sm:pb-3.5 w-full min-w-0"
+        >
           <div className="max-w-[1400px] w-full mx-auto flex items-center justify-between gap-2 sm:gap-4">
             {/* Zone 1: Mobile Menu Trigger + Breadcrumb Trail */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
@@ -693,7 +698,12 @@ export function WorkspaceShell() {
       {/* Mobile Native Bottom Navigation Bar */}
       <nav
         aria-label="Mobile Navigation"
-        className="lg:hidden fixed bottom-0 left-0 right-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-1 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] flex items-center justify-around shadow-lg"
+        style={{
+          paddingBottom: 'max(var(--sab, env(safe-area-inset-bottom, 0px)), 0.35rem)',
+          paddingLeft: 'max(var(--sal, env(safe-area-inset-left, 0px)), 0.25rem)',
+          paddingRight: 'max(var(--sar, env(safe-area-inset-right, 0px)), 0.25rem)',
+        }}
+        className="lg:hidden fixed bottom-0 left-0 right-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pt-1 pb-[max(var(--sab,env(safe-area-inset-bottom,0px)),0.35rem)] flex items-center justify-around shadow-lg"
       >
         <button
           type="button"

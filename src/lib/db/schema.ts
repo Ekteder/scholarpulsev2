@@ -133,12 +133,15 @@ export const tasks = pgTable(
     priority: text('priority').notNull().default('medium'), // 'low' | 'medium' | 'high'
     status: text('status').notNull().default('pending'), // 'pending' | 'in_progress' | 'completed'
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    idempotencyKey: text('idempotency_key').unique(),
+    version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('tasks_user_id_idx').on(table.userId),
     index('tasks_subject_id_idx').on(table.subjectId),
+    uniqueIndex('tasks_idempotency_key_idx').on(table.idempotencyKey),
   ]
 );
 
@@ -215,6 +218,7 @@ export const userAchievements = pgTable(
 export const notificationPreferences = pgTable('notification_preferences', {
   userId: text('user_id').primaryKey(),
   browserNotificationsEnabled: boolean('browser_notifications_enabled').notNull().default(false),
+  pushNotificationsEnabled: boolean('push_notifications_enabled').notNull().default(true),
   soundChimesEnabled: boolean('sound_chimes_enabled').notNull().default(true),
   dailyReminderEnabled: boolean('daily_reminder_enabled').notNull().default(true),
   dailyReminderTime: text('daily_reminder_time').notNull().default('19:00'),
@@ -579,5 +583,47 @@ export const systemConfigurations = pgTable('system_configurations', {
 
 export type SystemConfigurationRecord = typeof systemConfigurations.$inferSelect;
 export type NewSystemConfigurationRecord = typeof systemConfigurations.$inferInsert;
+
+// ==============================================================================
+// 24. Device Tokens table (Native FCM push notifications & hardware lifecycle)
+// ==============================================================================
+export const deviceTokens = pgTable(
+  'device_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => profiles.userId, { onDelete: 'cascade' }),
+    fcmToken: text('fcm_token').notNull(),
+    deviceId: text('device_id').notNull(),
+    platform: text('platform').notNull().default('android'),
+    deviceModel: text('device_model').notNull().default(''),
+    appVersion: text('app_version').notNull().default(''),
+    isActive: boolean('is_active').notNull().default(true),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('device_tokens_fcm_token_unique').on(table.fcmToken),
+    uniqueIndex('device_tokens_user_device_unique').on(table.userId, table.deviceId),
+    index('device_tokens_user_active_idx').on(table.userId, table.isActive),
+    index('device_tokens_platform_active_idx').on(table.platform, table.isActive),
+  ]
+);
+
+export const deviceTokensRelations = relations(deviceTokens, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [deviceTokens.userId],
+    references: [profiles.userId],
+  }),
+}));
+
+export type DeviceToken = typeof deviceTokens.$inferSelect;
+export type NewDeviceToken = typeof deviceTokens.$inferInsert;
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type NewNotificationPreference = typeof notificationPreferences.$inferInsert;
 
 

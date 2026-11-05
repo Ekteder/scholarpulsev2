@@ -15,6 +15,7 @@ import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { createStudySessionAction } from '../actions/sessions';
 import { completePomodoroPhaseAction } from '../actions/timer';
 import { getClientDeviceId } from '../hooks/useRealtimeSync';
+import { useAndroidBridge } from '../hooks/useAndroidBridge';
 
 export interface TimerContextValue {
   activeTimer: ActiveTimerSession | null;
@@ -52,6 +53,16 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     recoveredSessionNotice,
     dismissRecoveredNotice,
   } = useWorkspace();
+
+  const {
+    isNativeApp,
+    startForegroundTimer,
+    pauseForegroundTimer,
+    resumeForegroundTimer,
+    stopForegroundTimer,
+    skipPomodoroPhase: skipPomodoroPhaseBridge,
+    subscribe,
+  } = useAndroidBridge();
 
   const [timerElapsedSeconds, setTimerElapsedSeconds] = useState<number>(0);
   const pomodoroTransitionLock = useRef<boolean>(false);
@@ -288,6 +299,21 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
 
       await persistActiveTimer(newTimer);
 
+      if (isNativeApp) {
+        try {
+          await startForegroundTimer({
+            subjectId: newTimer.subjectId,
+            topic: newTimer.topic,
+            notes: newTimer.notes,
+            mode: newTimer.mode,
+            targetDurationSeconds: newTimer.targetDurationSeconds,
+            idempotencyKey: newTimer.idempotencyKey,
+          });
+        } catch (bridgeErr) {
+          console.warn('[TimerContext] Failed to start native foreground timer:', bridgeErr);
+        }
+      }
+
       if (data?.notificationPreferences?.soundChimesEnabled !== false) {
         playTimerChime('focus_start');
       }
@@ -305,6 +331,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       dismissRecoveredNotice,
       persistActiveTimer,
       addToast,
+      isNativeApp,
+      startForegroundTimer,
     ]
   );
 
@@ -322,7 +350,15 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     };
 
     await persistActiveTimer(pausedTimer);
-  }, [activeTimer, computeElapsedSeconds, persistActiveTimer]);
+
+    if (isNativeApp) {
+      try {
+        await pauseForegroundTimer();
+      } catch (bridgeErr) {
+        console.warn('[TimerContext] Failed to pause native foreground timer:', bridgeErr);
+      }
+    }
+  }, [activeTimer, computeElapsedSeconds, persistActiveTimer, isNativeApp, pauseForegroundTimer]);
 
   const resumeTimer = useCallback(async () => {
     if (!activeTimer || activeTimer.status !== 'paused') return;
@@ -336,7 +372,15 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     };
 
     await persistActiveTimer(runningTimer);
-  }, [activeTimer, persistActiveTimer]);
+
+    if (isNativeApp) {
+      try {
+        await resumeForegroundTimer();
+      } catch (bridgeErr) {
+        console.warn('[TimerContext] Failed to resume native foreground timer:', bridgeErr);
+      }
+    }
+  }, [activeTimer, persistActiveTimer, isNativeApp, resumeForegroundTimer]);
 
   const finishTimerSession = useCallback(
     async (opts?: {
@@ -353,6 +397,13 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
           variant: 'default',
         });
         await persistActiveTimer(null);
+        if (isNativeApp) {
+          try {
+            await stopForegroundTimer({ discard: true });
+          } catch (bridgeErr) {
+            console.warn('[TimerContext] Failed to stop native timer (discard):', bridgeErr);
+          }
+        }
         return null;
       }
 
@@ -375,6 +426,18 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await createStudySessionAction(payload);
         await persistActiveTimer(null);
+
+        if (isNativeApp) {
+          try {
+            await stopForegroundTimer({
+              productivityRating: payload.productivityRating,
+              notes: payload.notes,
+              discard: false,
+            });
+          } catch (bridgeErr) {
+            console.warn('[TimerContext] Failed to stop native timer:', bridgeErr);
+          }
+        }
 
         if (data?.notificationPreferences?.soundChimesEnabled !== false) {
           playTimerChime('focus_end');
@@ -417,6 +480,17 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
 
         if (queueSaved) {
           await persistActiveTimer(null);
+          if (isNativeApp) {
+            try {
+              await stopForegroundTimer({
+                productivityRating: payload.productivityRating,
+                notes: payload.notes,
+                discard: false,
+              });
+            } catch (bridgeErr) {
+              console.warn('[TimerContext] Failed to stop native timer on offline save:', bridgeErr);
+            }
+          }
           addToast({
             title: 'Session Saved to Offline Queue',
             description: 'Network issue detected. Session saved locally on device and will sync automatically.',
@@ -440,18 +514,27 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       refreshWorkspace,
       data?.notificationPreferences?.soundChimesEnabled,
       addToast,
+      isNativeApp,
+      stopForegroundTimer,
     ]
   );
 
   const resetTimer = useCallback(async () => {
     dismissRecoveredNotice();
     await persistActiveTimer(null);
+    if (isNativeApp) {
+      try {
+        await stopForegroundTimer({ discard: true });
+      } catch (bridgeErr) {
+        console.warn('[TimerContext] Failed to stop native timer on reset:', bridgeErr);
+      }
+    }
     addToast({
       title: 'Timer Reset',
       description: 'Unfinished timer session was discarded.',
       variant: 'default',
     });
-  }, [dismissRecoveredNotice, persistActiveTimer, addToast]);
+  }, [dismissRecoveredNotice, persistActiveTimer, addToast, isNativeApp, stopForegroundTimer]);
 
   const skipPomodoroPhase = useCallback(async () => {
     if (!activeTimer || activeTimer.mode !== 'pomodoro') return;
@@ -489,7 +572,74 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       };
       await persistActiveTimer(nextTimer);
     }
-  }, [activeTimer, data?.profile, computeElapsedSeconds, persistActiveTimer]);
+
+    if (isNativeApp) {
+      try {
+        await skipPomodoroPhaseBridge();
+      } catch (bridgeErr) {
+        console.warn('[TimerContext] Failed to skip native pomodoro phase:', bridgeErr);
+      }
+    }
+  }, [
+    activeTimer,
+    data?.profile,
+    computeElapsedSeconds,
+    persistActiveTimer,
+    isNativeApp,
+    skipPomodoroPhaseBridge,
+  ]);
+
+  // Keep refs fresh so listeners never close over stale handlers
+  const pauseTimerRef = useRef(pauseTimer);
+  const resumeTimerRef = useRef(resumeTimer);
+  const finishTimerSessionRef = useRef(finishTimerSession);
+  const skipPomodoroPhaseRef = useRef(skipPomodoroPhase);
+
+  useEffect(() => {
+    pauseTimerRef.current = pauseTimer;
+    resumeTimerRef.current = resumeTimer;
+    finishTimerSessionRef.current = finishTimerSession;
+    skipPomodoroPhaseRef.current = skipPomodoroPhase;
+  });
+
+  // Native notification action listener (lock-screen notification actions: pause, resume, stop, skip)
+  useEffect(() => {
+    if (!isNativeApp) return;
+
+    const unsubscribe = subscribe<{ action: string; source?: string }>(
+      'timer.actionTriggered',
+      (payload) => {
+        const action = payload?.action;
+        if (action === 'pause') {
+          pauseTimerRef.current();
+        } else if (action === 'resume') {
+          resumeTimerRef.current();
+        } else if (action === 'stop' || action === 'finish') {
+          finishTimerSessionRef.current();
+        } else if (action === 'skipPhase' || action === 'skip_break') {
+          skipPomodoroPhaseRef.current();
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [isNativeApp, subscribe]);
+
+  // Synchronize elapsed seconds when Android foreground service emits high-precision ticks
+  useEffect(() => {
+    if (!isNativeApp) return;
+
+    const unsubscribe = subscribe<{ elapsedSeconds: number }>(
+      'timer.tick',
+      (payload) => {
+        if (typeof payload?.elapsedSeconds === 'number' && payload.elapsedSeconds >= 0) {
+          setTimerElapsedSeconds(payload.elapsedSeconds);
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [isNativeApp, subscribe]);
 
   const value = useMemo(
     () => ({
