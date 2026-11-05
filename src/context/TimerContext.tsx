@@ -641,6 +641,42 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, [isNativeApp, subscribe]);
 
+  // Cross-device sync: reconcile native Android notification when activeTimer changes from web/desktop
+  useEffect(() => {
+    if (!isNativeApp) return;
+    if (!activeTimer) {
+      // If timer was saved or reset on the web, dismiss the native Android notification
+      stopForegroundTimer({ discard: false }).catch(() => {});
+      return;
+    }
+    if (activeTimer.status === 'paused') {
+      // If paused on web/desktop, pause the native notification
+      pauseForegroundTimer().catch(() => {});
+    } else if (activeTimer.status === 'running') {
+      // If running (started on web or resumed on web), ensure native notification is active
+      startForegroundTimer({
+        subjectId: activeTimer.subjectId,
+        topic: activeTimer.topic,
+        notes: activeTimer.notes,
+        mode: activeTimer.mode,
+        targetDurationSeconds: activeTimer.targetDurationSeconds,
+        idempotencyKey: activeTimer.idempotencyKey,
+      }).catch(() => {});
+    }
+  }, [
+    isNativeApp,
+    activeTimer?.status,
+    activeTimer?.idempotencyKey,
+    activeTimer?.subjectId,
+    activeTimer?.topic,
+    activeTimer?.notes,
+    activeTimer?.mode,
+    activeTimer?.targetDurationSeconds,
+    startForegroundTimer,
+    pauseForegroundTimer,
+    stopForegroundTimer,
+  ]);
+
   const value = useMemo(
     () => ({
       activeTimer,
