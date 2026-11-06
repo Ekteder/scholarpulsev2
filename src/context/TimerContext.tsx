@@ -15,7 +15,11 @@ import { playTimerChime, sendBrowserNotification } from '../lib/audio';
 import { createStudySessionAction } from '../actions/sessions';
 import { completePomodoroPhaseAction } from '../actions/timer';
 import { getClientDeviceId } from '../hooks/useRealtimeSync';
-import { useAndroidBridge } from '../hooks/useAndroidBridge';
+import {
+  useAndroidBridge,
+  getNativeTimerSyncState,
+  acknowledgeNativeReview,
+} from '../hooks/useAndroidBridge';
 
 export interface TimerContextValue {
   activeTimer: ActiveTimerSession | null;
@@ -643,12 +647,61 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, [isNativeApp, subscribe]);
 
+  const reconcileWithNativeState = useCallback((): boolean => {
+    if (!isNativeApp) return false;
+    try {
+      const syncState = getNativeTimerSyncState();
+      if (!syncState) return false;
+      if (
+        activeTimer &&
+        syncState.lastFinishedIdempotencyKey &&
+        activeTimer.idempotencyKey === syncState.lastFinishedIdempotencyKey
+      ) {
+        // 1. Clear active timer locally so the spawner effect does NOT resurrect it
+        persistActiveTimer(null);
+        // 2. Display the Option C auto-saved toast / notification
+        if (syncState.pendingReview) {
+          const mins = Math.max(1, Math.round(syncState.pendingReview.durationSeconds / 60));
+          addToast({
+            title: 'Study Session Saved',
+            description: `Recorded ${mins} min of study for "${syncState.pendingReview.topic || 'General Study'}".`,
+            variant: 'success',
+          });
+          acknowledgeNativeReview(syncState.pendingReview.idempotencyKey);
+        }
+        return true;
+      }
+    } catch (err) {
+      console.warn('[TimerContext] Error reconciling with native state:', err);
+    }
+    return false;
+  }, [isNativeApp, activeTimer, persistActiveTimer, addToast]);
+
+  useEffect(() => {
+    if (!isNativeApp) return;
+    const handleWake = () => {
+      if (document.visibilityState === 'visible') {
+        reconcileWithNativeState();
+      }
+    };
+    document.addEventListener('visibilitychange', handleWake);
+    window.addEventListener('focus', handleWake);
+    return () => {
+      document.removeEventListener('visibilitychange', handleWake);
+      window.removeEventListener('focus', handleWake);
+    };
+  }, [isNativeApp, reconcileWithNativeState]);
+
   // Cross-device sync: reconcile native Android notification when activeTimer changes from web/desktop
   useEffect(() => {
     if (!isNativeApp) return;
     if (!activeTimer) {
       // Session is already completed or cleared on server; dismiss native notification without double-saving
       stopForegroundTimer({ discard: true }).catch(() => {});
+      return;
+    }
+    // Anti-Resurrection Guard: check native tombstone before spawning service!
+    if (reconcileWithNativeState()) {
       return;
     }
     if (activeTimer.status === 'paused') {
@@ -682,6 +735,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     startForegroundTimer,
     pauseForegroundTimer,
     stopForegroundTimer,
+    reconcileWithNativeState,
   ]);
 
   const value = useMemo(

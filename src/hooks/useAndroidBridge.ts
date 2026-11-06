@@ -115,10 +115,72 @@ export function isBridgeAvailable(): boolean {
     (window as unknown as { nativeBridge?: { postMessage?: unknown } }).nativeBridge?.postMessage ||
     (window as unknown as { __ScholarPulseNativeBridge?: { postMessage?: unknown } }).__ScholarPulseNativeBridge?.postMessage ||
     (window as unknown as { ScholarPulseBridge?: { postMessage?: unknown } }).ScholarPulseBridge?.postMessage ||
+    (window as unknown as { AndroidBridge?: { postMessage?: unknown } }).AndroidBridge?.postMessage ||
     (window as unknown as { nativeBridge?: unknown }).nativeBridge ||
     (window as unknown as { __ScholarPulseNativeBridge?: unknown }).__ScholarPulseNativeBridge ||
-    (window as unknown as { ScholarPulseBridge?: unknown }).ScholarPulseBridge
+    (window as unknown as { ScholarPulseBridge?: unknown }).ScholarPulseBridge ||
+    (window as unknown as { AndroidBridge?: unknown }).AndroidBridge
   );
+}
+
+export interface NativeTimerSyncState {
+  lastFinishedIdempotencyKey?: string | null;
+  pendingReview?: {
+    idempotencyKey: string;
+    subjectId: string;
+    topic: string;
+    durationSeconds: number;
+    finishedAt: number;
+  } | null;
+}
+
+export function getNativeTimerSyncState(): NativeTimerSyncState | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const win = window as unknown as {
+    AndroidBridge?: { getNativeTimerSyncState?: () => string };
+    __ScholarPulseNativeBridge?: { getNativeTimerSyncState?: () => string };
+    ScholarPulseBridge?: { getNativeTimerSyncState?: () => string };
+    nativeBridge?: { getNativeTimerSyncState?: () => string };
+  };
+  const bridge = win.AndroidBridge || win.__ScholarPulseNativeBridge || win.ScholarPulseBridge || win.nativeBridge;
+  if (!bridge?.getNativeTimerSyncState) {
+    return null;
+  }
+  try {
+    const raw = bridge.getNativeTimerSyncState();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const pendingReview = parsed.pendingReview
+      ? (typeof parsed.pendingReview === 'string' ? JSON.parse(parsed.pendingReview) : parsed.pendingReview)
+      : null;
+    return {
+      lastFinishedIdempotencyKey: parsed.lastFinishedIdempotencyKey || null,
+      pendingReview,
+    };
+  } catch (err) {
+    console.warn('[useAndroidBridge] Failed to read native timer sync state:', err);
+    return null;
+  }
+}
+
+export function acknowledgeNativeReview(idempotencyKey: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const win = window as unknown as {
+      AndroidBridge?: { acknowledgePendingReview?: (key: string) => void };
+      __ScholarPulseNativeBridge?: { acknowledgePendingReview?: (key: string) => void };
+      ScholarPulseBridge?: { acknowledgePendingReview?: (key: string) => void };
+      nativeBridge?: { acknowledgePendingReview?: (key: string) => void };
+    };
+    const bridge = win.AndroidBridge || win.__ScholarPulseNativeBridge || win.ScholarPulseBridge || win.nativeBridge;
+    if (bridge?.acknowledgePendingReview) {
+      bridge.acknowledgePendingReview(idempotencyKey);
+    }
+  } catch (err) {
+    console.warn('[useAndroidBridge] Failed to acknowledge native review:', err);
+  }
 }
 
 /**
