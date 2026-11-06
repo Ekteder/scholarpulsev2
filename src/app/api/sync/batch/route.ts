@@ -330,7 +330,7 @@ export async function POST(req: NextRequest) {
 
       // 4b. Auto-clear active timer in database if a completed timer session was synced
       let timerCleared = false;
-      const hasCompletedTimerSession = studySessions.some((s) => s.sessionType === 'timer');
+      const hasCompletedTimerSession = studySessions.some((s) => s.sessionType === 'timer' || s.sessionType === 'stopwatch' || s.sessionType === 'manual');
       if (hasCompletedTimerSession && !activeTimer) {
         await tx
           .delete(activeTimerSessions)

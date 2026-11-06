@@ -10,7 +10,7 @@ export const StudySessionBatchItemSchema = z.object({
   topic: z.string().max(200).optional().default('General Study'),
   notes: z.string().max(2000).optional().default(''),
   productivityRating: z.number().int().min(1).max(5).optional().default(4),
-  sessionType: z.enum(['manual', 'timer']).optional().default('timer'),
+  sessionType: z.enum(['manual', 'timer', 'stopwatch']).optional().default('timer'),
 });
 
 export const TaskBatchItemSchema = z.object({
