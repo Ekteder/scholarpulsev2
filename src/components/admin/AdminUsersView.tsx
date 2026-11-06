@@ -51,6 +51,7 @@ import {
   updateAdminUserDetailAction,
   toggleAdminUserBanAction,
   setAdminUserTargetedAnnouncementAction,
+  sendAdminIndividualPushAction,
 } from '@/actions/admin';
 import type { AdminUserListItem, AdminUserDetailResult } from '@/lib/db/repository';
 import { SUPPORTED_TIMEZONES } from '@/lib/timezone';
@@ -94,6 +95,13 @@ export function AdminUsersView() {
   const [targetedAnnouncementText, setTargetedAnnouncementText] = useState('');
   const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
   const [announcementSuccess, setAnnouncementSuccess] = useState(false);
+
+  // Direct Individual Push Notification state
+  const [individualPushTitle, setIndividualPushTitle] = useState('');
+  const [individualPushBody, setIndividualPushBody] = useState('');
+  const [individualPushTab, setIndividualPushTab] = useState('dashboard');
+  const [isSendingIndividualPush, setIsSendingIndividualPush] = useState(false);
+  const [individualPushResult, setIndividualPushResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Save changes
   const [isSavingChanges, setIsSavingChanges] = useState(false);
@@ -239,6 +247,9 @@ export function AdminUsersView() {
     setDetailLoading(true);
     setSaveSuccess(false);
     setAnnouncementSuccess(false);
+    setIndividualPushResult(null);
+    setIndividualPushTitle('');
+    setIndividualPushBody('');
     setDetailUser(null);
 
     try {
@@ -444,6 +455,40 @@ export function AdminUsersView() {
       setActionError(err?.message || 'Error sending targeted announcement');
     } finally {
       setIsSendingAnnouncement(false);
+    }
+  };
+
+  const handleSendIndividualPush = async () => {
+    if (!selectedUserId || !individualPushTitle.trim() || !individualPushBody.trim() || isSendingIndividualPush) return;
+    setIsSendingIndividualPush(true);
+    setIndividualPushResult(null);
+    try {
+      const res = await sendAdminIndividualPushAction({
+        userId: selectedUserId,
+        title: individualPushTitle,
+        body: individualPushBody,
+        tab: individualPushTab,
+      });
+      if (res.success) {
+        setIndividualPushResult({
+          success: true,
+          message: `Push delivered to ${res.sent || 0} active device(s)${res.failed ? ` (${res.failed} failed)` : ''}!`,
+        });
+        setIndividualPushTitle('');
+        setIndividualPushBody('');
+      } else {
+        setIndividualPushResult({
+          success: false,
+          message: res.error || 'Failed to send individual push notification',
+        });
+      }
+    } catch (err: any) {
+      setIndividualPushResult({
+        success: false,
+        message: err?.message || 'Error sending push notification',
+      });
+    } finally {
+      setIsSendingIndividualPush(false);
     }
   };
 
@@ -995,6 +1040,67 @@ export function AdminUsersView() {
                     >
                       <Send className="w-3.5 h-3.5 mr-1.5" />
                       <span>{isSendingAnnouncement ? 'Sending...' : 'Send Targeted Announcement'}</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3b: Direct Mobile Push Notification (R5) */}
+              <div className="space-y-3 pt-3 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">📱</span>
+                    <h4 className="font-display font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                      Direct Mobile Push Notification (R5)
+                    </h4>
+                  </div>
+                  {individualPushResult && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        individualPushResult.success
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400'
+                          : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-400'
+                      }`}
+                    >
+                      {individualPushResult.message}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Send a direct chime/vibration alert to this student's physical phone, even if the app is killed.
+                </p>
+
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Notification Title (e.g. Account Notice, Study Check-in)..."
+                    value={individualPushTitle}
+                    onChange={(e) => setIndividualPushTitle(e.target.value)}
+                    className="text-xs h-9"
+                  />
+                  <Textarea
+                    placeholder="Enter notification message body..."
+                    value={individualPushBody}
+                    onChange={(e) => setIndividualPushBody(e.target.value)}
+                    className="text-xs min-h-[70px] w-full"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <select
+                      value={individualPushTab}
+                      onChange={(e) => setIndividualPushTab(e.target.value)}
+                      className="text-xs h-9 rounded-md border border-input bg-card px-2.5 text-foreground"
+                    >
+                      <option value="dashboard">Open Tab: Dashboard</option>
+                      <option value="tracker">Open Tab: Study Tracker</option>
+                      <option value="timer">Open Tab: Study Timer</option>
+                      <option value="revision">Open Tab: Revision Tracker</option>
+                    </select>
+                    <Button
+                      type="button"
+                      disabled={isSendingIndividualPush || !individualPushTitle.trim() || !individualPushBody.trim()}
+                      onClick={handleSendIndividualPush}
+                      className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4"
+                    >
+                      {isSendingIndividualPush ? 'Sending...' : '🚀 Send Push to User'}
                     </Button>
                   </div>
                 </div>

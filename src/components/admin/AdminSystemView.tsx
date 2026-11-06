@@ -54,6 +54,7 @@ import {
   getAdminAllowlistAction,
   addAdminAllowlistAction,
   removeAdminAllowlistAction,
+  sendAdminBroadcastPushAction,
 } from '@/actions/admin';
 import type { AdminAllowlistEntry, SystemConfigurationRecord } from '@/lib/db/schema';
 
@@ -84,6 +85,37 @@ export function AdminSystemView() {
   // Delete admin confirmation
   const [deleteEmail, setDeleteEmail] = useState<string | null>(null);
   const [isDeletingAdmin, setIsDeletingAdmin] = useState(false);
+
+  // Global mobile push notification broadcast
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastBody, setBroadcastBody] = useState('');
+  const [broadcastTab, setBroadcastTab] = useState('dashboard');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleBroadcastPush = async () => {
+    if (!broadcastTitle.trim() || !broadcastBody.trim() || isBroadcasting) return;
+    setIsBroadcasting(true);
+    setBroadcastResult(null);
+    try {
+      const res = await sendAdminBroadcastPushAction({
+        title: broadcastTitle,
+        body: broadcastBody,
+        tab: broadcastTab,
+      });
+      if (res.success) {
+        setBroadcastResult({ success: true, message: 'Global push broadcast sent successfully!' });
+        setBroadcastTitle('');
+        setBroadcastBody('');
+      } else {
+        setBroadcastResult({ success: false, message: res.error || 'Failed to broadcast push notification' });
+      }
+    } catch (err: any) {
+      setBroadcastResult({ success: false, message: err?.message || 'Failed to broadcast push notification' });
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -387,6 +419,67 @@ export function AdminSystemView() {
                 <option value="false">Operational (Active)</option>
                 <option value="true">Under Maintenance</option>
               </select>
+            </div>
+
+            {/* Dedicated Global Mobile Push Broadcast Section */}
+            <div className="border-t border-border pt-4 mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <span>📢</span> Broadcast Mobile Push Notification (All Devices)
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    Fires an instant push alert directly to all registered student phones even if their app is closed.
+                  </p>
+                </div>
+                {broadcastResult && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      broadcastResult.success
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400'
+                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-400'
+                    }`}
+                  >
+                    {broadcastResult.message}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  placeholder="Notification Title (e.g. ⚡ Class Time Updated)..."
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)}
+                  className="text-xs h-9"
+                />
+                <select
+                  value={broadcastTab}
+                  onChange={(e) => setBroadcastTab(e.target.value)}
+                  className="w-full text-xs h-9 rounded-md border border-input bg-card px-3 text-foreground"
+                >
+                  <option value="dashboard">Open Tab: Dashboard</option>
+                  <option value="tracker">Open Tab: Study Tracker</option>
+                  <option value="timer">Open Tab: Study Timer</option>
+                  <option value="revision">Open Tab: Revision Tracker</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <Input
+                  placeholder="Notification message body..."
+                  value={broadcastBody}
+                  onChange={(e) => setBroadcastBody(e.target.value)}
+                  className="text-xs h-9 flex-1"
+                />
+                <Button
+                  type="button"
+                  disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
+                  onClick={handleBroadcastPush}
+                  className="text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 whitespace-nowrap"
+                >
+                  {isBroadcasting ? 'Broadcasting...' : '📢 Send Global Push'}
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>

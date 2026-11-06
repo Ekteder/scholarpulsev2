@@ -4,6 +4,7 @@ import 'server-only';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireAdminUser, isUserAdmin } from '@/lib/auth';
+import { sendTopicFCM, sendMulticastFCM } from '@/lib/fcm';
 import {
   // Allowlist
   getAllAdminAllowlist,
@@ -564,5 +565,70 @@ export async function setAdminUserTargetedAnnouncementAction(
 export const toggleUserBanAction = toggleAdminUserBanAction;
 export const sendTargetedAnnouncementAction = setAdminUserTargetedAnnouncementAction;
 export const updateUserDetailAction = updateAdminUserDetailAction;
+
+export async function sendAdminBroadcastPushAction(data: {
+  title: string;
+  body: string;
+  tab?: string;
+}) {
+  await requireAdminUser();
+  if (!data.title?.trim() || !data.body?.trim()) {
+    return { success: false, error: 'Title and body are required' };
+  }
+
+  try {
+    const result = await sendTopicFCM('announcements_global', {
+      title: data.title.trim(),
+      body: data.body.trim(),
+      priority: 'high',
+      channelId: 'announcements_channel',
+      data: {
+        tab: data.tab || 'dashboard',
+        url: '/workspace',
+        type: 'announcement_global',
+      },
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to dispatch topic push' };
+    }
+
+    return { success: true, messageId: result.messageId };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Error broadcasting push notification' };
+  }
+}
+
+export async function sendAdminIndividualPushAction(data: {
+  userId: string;
+  title: string;
+  body: string;
+  tab?: string;
+}) {
+  await requireAdminUser();
+  if (!data.userId || !data.title?.trim() || !data.body?.trim()) {
+    return { success: false, error: 'User ID, title, and body are required' };
+  }
+
+  try {
+    const result = await sendMulticastFCM(data.userId, {
+      title: data.title.trim(),
+      body: data.body.trim(),
+      priority: 'high',
+      channelId: 'announcements_channel',
+      data: {
+        tab: data.tab || 'dashboard',
+        url: '/workspace',
+        userId: data.userId,
+        type: 'targeted_admin',
+      },
+    });
+
+    return { success: true, sent: result.sent, failed: result.failed };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Error sending individual push notification' };
+  }
+}
+
 
 

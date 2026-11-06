@@ -261,3 +261,65 @@ export async function sendMulticastFCM(
  * Backwards/spec compatibility alias for sendMulticastFCM.
  */
 export const sendFcmNotificationToUser = sendMulticastFCM;
+
+/**
+ * Dispatch a broadcast push notification to an FCM topic (e.g. 'announcements_global') via FCM HTTP v1.
+ * High-performance: single request delivers to all subscribed devices without looping device tokens.
+ */
+export async function sendTopicFCM(
+  topic: string,
+  payload: MulticastPayload
+): Promise<SendFCMResult> {
+  try {
+    const { token: accessToken, projectId } = await getFCMToken();
+    const endpoint = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+    const cleanTopic = topic.replace(/^\/topics\//, '');
+
+    const bodyPayload = {
+      message: {
+        topic: cleanTopic,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+        },
+        android: {
+          priority: payload.priority === 'high' ? 'high' : 'normal',
+          notification: {
+            channel_id: payload.channelId || 'announcements_channel',
+            icon: 'ic_splash_logo',
+            color: '#2563EB',
+            sound: 'default',
+          },
+        },
+        data: {
+          ...payload.data,
+          title: payload.title,
+          body: payload.body,
+          type: payload.data?.type || 'announcement',
+          channelId: payload.channelId || 'announcements_channel',
+        },
+      },
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(bodyPayload),
+    });
+
+    if (res.ok) {
+      const resJson = (await res.json().catch(() => ({}))) as { name?: string };
+      return { success: true, messageId: resJson.name };
+    }
+
+    const errText = await res.text();
+    return { success: false, error: `Topic send failed (${res.status}): ${errText}` };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
+
