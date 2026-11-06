@@ -89,19 +89,18 @@ export async function POST(req: NextRequest) {
     const { fcmToken, deviceId, platform, deviceModel, appVersion } = parsed.data;
 
     const tokenId = await db.transaction(async (tx) => {
-      // 1. Deactivate any duplicate token previously assigned to another user or on another hardware
+      // 1. Cleanly remove any existing assignment of this hardware or FCM token across all users
       await tx
-        .update(deviceTokens)
-        .set({ isActive: false, updatedAt: new Date() })
+        .delete(deviceTokens)
         .where(
-          and(
+          or(
             eq(deviceTokens.fcmToken, fcmToken),
-            or(ne(deviceTokens.userId, user.uid), ne(deviceTokens.deviceId, deviceId))
+            and(eq(deviceTokens.userId, user.uid), eq(deviceTokens.deviceId, deviceId))
           )
         );
 
-      // 2. Upsert token record for active user and device
-      const [upserted] = await tx
+      // 2. Freshly attach the device to the newly authenticated student
+      const [inserted] = await tx
         .insert(deviceTokens)
         .values({
           userId: user.uid,
@@ -114,21 +113,9 @@ export async function POST(req: NextRequest) {
           lastUsedAt: new Date(),
           updatedAt: new Date(),
         })
-        .onConflictDoUpdate({
-          target: [deviceTokens.userId, deviceTokens.deviceId],
-          set: {
-            fcmToken,
-            platform,
-            deviceModel,
-            appVersion,
-            isActive: true,
-            lastUsedAt: new Date(),
-            updatedAt: new Date(),
-          },
-        })
         .returning({ id: deviceTokens.id });
 
-      return upserted?.id;
+      return inserted?.id;
     });
 
     return NextResponse.json({
