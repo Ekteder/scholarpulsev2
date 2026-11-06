@@ -138,20 +138,15 @@ export async function sendFCMNotification(params: SendFCMParams): Promise<SendFC
     const payload = {
       message: {
         token: params.token,
-        notification: {
+        android: {
+          priority: 'high',
+        },
+        data: {
           title: params.title,
           body: params.body,
+          channelId: params.channelId || 'announcements_channel',
+          ...params.data,
         },
-        android: {
-          priority: params.priority === 'high' ? 'high' : 'normal',
-          notification: {
-            channel_id: params.channelId || 'streak_alerts',
-            icon: 'ic_notification',
-            color: '#2563EB',
-            sound: 'default',
-          },
-        },
-        data: params.data || {},
       },
     };
 
@@ -278,25 +273,15 @@ export async function sendTopicFCM(
     const bodyPayload = {
       message: {
         topic: cleanTopic,
-        notification: {
-          title: payload.title,
-          body: payload.body,
-        },
         android: {
-          priority: payload.priority === 'high' ? 'high' : 'normal',
-          notification: {
-            channel_id: payload.channelId || 'announcements_channel',
-            icon: 'ic_splash_logo',
-            color: '#2563EB',
-            sound: 'default',
-          },
+          priority: 'high',
         },
         data: {
-          ...payload.data,
           title: payload.title,
           body: payload.body,
-          type: payload.data?.type || 'announcement',
           channelId: payload.channelId || 'announcements_channel',
+          type: payload.data?.type || 'announcement',
+          ...payload.data,
         },
       },
     };
