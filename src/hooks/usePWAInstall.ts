@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { isBridgeAvailable } from './useAndroidBridge';
 
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -29,8 +30,20 @@ export function usePWAInstall() {
     useState<BeforeInstallPromptEvent | null>(() =>
       typeof window !== 'undefined' ? window.__deferredPwaPrompt || null : null
     );
-  const [isInstalled, setIsInstalled] = useState<boolean>(false);
-  const [isStandalone, setIsStandalone] = useState<boolean>(false);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      isBridgeAvailable() ||
+      (typeof navigator !== 'undefined' && /ScholarPulseAndroid/i.test(navigator.userAgent))
+    );
+  });
+  const [isStandalone, setIsStandalone] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      isBridgeAvailable() ||
+      (typeof navigator !== 'undefined' && /ScholarPulseAndroid/i.test(navigator.userAgent))
+    );
+  });
   const [platform, setPlatform] = useState<PWAPlatform>('desktop-chrome');
   const [isInIframe, setIsInIframe] = useState<boolean>(false);
   const [swRegistered, setSwRegistered] = useState<boolean>(false);
@@ -40,6 +53,17 @@ export function usePWAInstall() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // 0. Detect if running inside native Android shell
+    const isNativeApp =
+      isBridgeAvailable() ||
+      (typeof navigator !== 'undefined' && /ScholarPulseAndroid/i.test(navigator.userAgent));
+
+    if (isNativeApp) {
+      setIsStandalone(true);
+      setIsInstalled(true);
+      return;
+    }
 
     // 1. Check standalone mode
     const checkStandalone = () => {
