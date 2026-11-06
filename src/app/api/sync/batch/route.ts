@@ -328,13 +328,34 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 4b. Auto-clear active timer in database if a completed timer session was synced
+      let timerCleared = false;
+      const hasCompletedTimerSession = studySessions.some((s) => s.sessionType === 'timer');
+      if (hasCompletedTimerSession && !activeTimer) {
+        await tx
+          .delete(activeTimerSessions)
+          .where(eq(activeTimerSessions.userId, user.uid));
+        timerCleared = true;
+      }
+
       return {
         studySessions: { inserted: sessionsInserted, duplicates: sessionsDuplicates },
         tasks: { updated: tasksUpdated, inserted: tasksInserted },
         revisionRecords: { upserted: revisionsUpserted },
-        activeTimer: { updated: timerUpdated },
+        activeTimer: { updated: timerUpdated, cleared: timerCleared },
+        timerCleared,
       };
     });
+
+    // Broadcast timer:delete across all active devices if a timer session was completed
+    if (syncStats.timerCleared) {
+      await publishSyncEvent({
+        userId: user.uid,
+        eventType: 'timer:delete',
+        payload: {},
+        clientDeviceId,
+      });
+    }
 
     // Publish workspace refresh sync event across active sessions
     await publishSyncEvent({
