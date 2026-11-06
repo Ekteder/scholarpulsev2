@@ -272,6 +272,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 4. Process Active Timer
+      let updatedTimerRecord: any = null;
       if (activeTimer) {
         const [currentServerTimer] = await tx
           .select()
@@ -282,7 +283,7 @@ export async function POST(req: NextRequest) {
         if (!currentServerTimer || activeTimer.stateVersion >= currentServerTimer.stateVersion) {
           const timerKey = activeTimer.idempotencyKey || `timer_${user.uid}_${Date.now()}`;
 
-          await tx
+          const [savedTimer] = await tx
             .insert(activeTimerSessions)
             .values({
               userId: user.uid,
@@ -323,8 +324,10 @@ export async function POST(req: NextRequest) {
                 idempotencyKey: timerKey,
                 updatedAt: new Date(),
               },
-            });
+            })
+            .returning();
           timerUpdated = true;
+          updatedTimerRecord = savedTimer;
         }
       }
 
@@ -344,6 +347,7 @@ export async function POST(req: NextRequest) {
         revisionRecords: { upserted: revisionsUpserted },
         activeTimer: { updated: timerUpdated, cleared: timerCleared },
         timerCleared,
+        updatedTimerRecord,
       };
     });
 
@@ -353,6 +357,16 @@ export async function POST(req: NextRequest) {
         userId: user.uid,
         eventType: 'timer:delete',
         payload: {},
+        clientDeviceId,
+      });
+    }
+
+    // Broadcast timer:update across all active devices in real time if active timer was updated
+    if (syncStats.activeTimer?.updated && syncStats.updatedTimerRecord) {
+      await publishSyncEvent({
+        userId: user.uid,
+        eventType: 'timer:update',
+        payload: { timer: syncStats.updatedTimerRecord },
         clientDeviceId,
       });
     }
