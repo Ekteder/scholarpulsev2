@@ -3,7 +3,7 @@ import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { profiles, deviceTokens } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 
 const GoogleNativeAuthSchema = z.object({
   idToken: z.string().min(20, 'Invalid Google ID token format'),
@@ -134,6 +134,14 @@ export async function POST(req: NextRequest) {
     // Optional device token association during native login
     if (fcmToken && deviceId) {
       await db
+        .delete(deviceTokens)
+        .where(
+          or(
+            eq(deviceTokens.fcmToken, fcmToken),
+            and(eq(deviceTokens.userId, sub), eq(deviceTokens.deviceId, deviceId))
+          )
+        );
+      await db
         .insert(deviceTokens)
         .values({
           userId: sub,
@@ -145,17 +153,6 @@ export async function POST(req: NextRequest) {
           isActive: true,
           lastUsedAt: new Date(),
           updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [deviceTokens.userId, deviceTokens.deviceId],
-          set: {
-            fcmToken,
-            deviceModel: deviceModel || '',
-            appVersion: appVersion || '',
-            isActive: true,
-            lastUsedAt: new Date(),
-            updatedAt: new Date(),
-          },
         });
     }
 
