@@ -37,6 +37,28 @@ export async function syncActiveTimerAction(raw: unknown) {
       payload: { timer: result.timer },
       clientDeviceId: parsed.clientDeviceId,
     });
+
+    // Fan out to Android native TimerForegroundService via high-priority data push
+    try {
+      const { sendMulticastFCM } = await import('@/lib/fcm');
+      const action = result.timer.status === 'paused' ? 'PAUSE' : 'RESUME';
+      await sendMulticastFCM(user.uid, {
+        title: '',
+        body: '',
+        priority: 'high',
+        channelId: 'scholarpulse_timer_channel',
+        data: {
+          type: 'timer_state',
+          action,
+          accumulatedSeconds: String(result.timer.accumulatedSeconds || 0),
+          updatedAt: String(Date.now()),
+          originDeviceId: parsed.clientDeviceId || '',
+          userId: user.uid,
+        },
+      });
+    } catch (fcmErr) {
+      console.warn('Failed to fan out timer update to FCM:', fcmErr);
+    }
   }
 
   return { success: true, ...result };
@@ -52,6 +74,26 @@ export async function deleteActiveTimerAction(clientDeviceId?: string) {
     payload: {},
     clientDeviceId,
   });
+
+  // Fan out STOP to Android native TimerForegroundService
+  try {
+    const { sendMulticastFCM } = await import('@/lib/fcm');
+    await sendMulticastFCM(user.uid, {
+      title: '',
+      body: '',
+      priority: 'high',
+      channelId: 'scholarpulse_timer_channel',
+      data: {
+        type: 'timer_state',
+        action: 'STOP',
+        updatedAt: String(Date.now()),
+        originDeviceId: clientDeviceId || '',
+        userId: user.uid,
+      },
+    });
+  } catch (fcmErr) {
+    console.warn('Failed to fan out timer stop to FCM:', fcmErr);
+  }
 
   return { success: true };
 }
