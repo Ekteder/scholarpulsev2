@@ -10,13 +10,16 @@ import {
   Edit,
   Mail,
   Plus,
+  Radio,
   RefreshCw,
   Save,
+  Send,
   Settings2,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   UserPlus,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Table,
@@ -420,66 +423,95 @@ export function AdminSystemView() {
                 <option value="true">Under Maintenance</option>
               </select>
             </div>
+          </div>
+        </CardContent>
+      </Card>
 
-            {/* Dedicated Global Mobile Push Broadcast Section */}
-            <div className="border-t border-border pt-4 mt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <span>📢</span> Broadcast Mobile Push Notification (All Devices)
-                  </h4>
-                  <p className="text-[11px] text-muted-foreground">
-                    Fires an instant push alert directly to all registered student phones even if their app is closed.
-                  </p>
-                </div>
-                {broadcastResult && (
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      broadcastResult.success
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400'
-                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-400'
-                    }`}
-                  >
-                    {broadcastResult.message}
-                  </span>
+      {/* Dedicated Standalone Card: Mobile Push Broadcast (Global) */}
+      <Card data-slot="card" className="border-blue-500/30 bg-blue-500/5">
+        <CardHeader className="p-5 pb-3 border-b border-blue-500/20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2 text-blue-500 dark:text-blue-400">
+                <Radio className="w-4 h-4 text-blue-500 animate-pulse" />
+                Broadcast Mobile Push Notification (All Devices)
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                Dispatches an instant high-priority push alert directly to all registered student phones even if their app is completely closed.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="border-blue-500/40 text-blue-500 dark:text-blue-400 text-[10px] font-mono">
+                Topic: announcements_global
+              </Badge>
+              {broadcastResult && (
+                <Badge
+                  variant={broadcastResult.success ? 'default' : 'destructive'}
+                  className="text-[11px] gap-1"
+                >
+                  {broadcastResult.success ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : (
+                    <AlertTriangle className="w-3 h-3" />
+                  )}
+                  {broadcastResult.message}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-semibold text-foreground">Notification Title</label>
+              <Input
+                placeholder="e.g. ⚡ Class Timetable Updated"
+                value={broadcastTitle}
+                onChange={(e) => setBroadcastTitle(e.target.value)}
+                className="text-xs h-9 bg-background/60"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Destination Tab</label>
+              <select
+                value={broadcastTab}
+                onChange={(e) => setBroadcastTab(e.target.value)}
+                className="w-full text-xs h-9 rounded-md border border-input bg-background/60 px-3 text-foreground"
+              >
+                <option value="dashboard">Dashboard</option>
+                <option value="tracker">Study Tracker</option>
+                <option value="timer">Study Timer</option>
+                <option value="revision">Revision Tracker</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">Notification Message Body</label>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <Input
+                placeholder="Enter alert message to display on student lockscreens..."
+                value={broadcastBody}
+                onChange={(e) => setBroadcastBody(e.target.value)}
+                className="text-xs h-9 flex-1 bg-background/60"
+              />
+              <Button
+                type="button"
+                disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
+                onClick={handleBroadcastPush}
+                className="text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 whitespace-nowrap gap-1.5"
+              >
+                {isBroadcasting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Broadcasting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Broadcast Push Alert</span>
+                  </>
                 )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Input
-                  placeholder="Notification Title (e.g. ⚡ Class Time Updated)..."
-                  value={broadcastTitle}
-                  onChange={(e) => setBroadcastTitle(e.target.value)}
-                  className="text-xs h-9"
-                />
-                <select
-                  value={broadcastTab}
-                  onChange={(e) => setBroadcastTab(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-card px-3 text-foreground"
-                >
-                  <option value="dashboard">Open Tab: Dashboard</option>
-                  <option value="tracker">Open Tab: Study Tracker</option>
-                  <option value="timer">Open Tab: Study Timer</option>
-                  <option value="revision">Open Tab: Revision Tracker</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <Input
-                  placeholder="Notification message body..."
-                  value={broadcastBody}
-                  onChange={(e) => setBroadcastBody(e.target.value)}
-                  className="text-xs h-9 flex-1"
-                />
-                <Button
-                  type="button"
-                  disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
-                  onClick={handleBroadcastPush}
-                  className="text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 whitespace-nowrap"
-                >
-                  {isBroadcasting ? 'Broadcasting...' : '📢 Send Global Push'}
-                </Button>
-              </div>
+              </Button>
             </div>
           </div>
         </CardContent>
