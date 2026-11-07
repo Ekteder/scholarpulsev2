@@ -68,6 +68,7 @@ export const StudySessionSchema = z.object({
   productivityRating: z.number().int().min(1).max(5).default(4),
   sessionType: z.enum(['manual', 'timer']).default('manual'),
   idempotencyKey: z.string().optional(),
+  clearActiveTimer: z.boolean().optional(),
 });
 
 export const ActiveTimerSyncSchema = z.object({

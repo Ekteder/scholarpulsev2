@@ -51,6 +51,9 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     user,
     activeTimer,
     persistActiveTimer,
+    insertOptimisticSession,
+    reconcileOptimisticSession,
+    removeOptimisticSession,
     data,
     addToast,
     refreshWorkspace,
@@ -245,7 +248,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
                   variant: 'default',
                 });
               }
-              await refreshWorkspace();
+              refreshWorkspace({ silent: true }).catch(() => {});
             }
           }
         } catch (err) {
@@ -395,128 +398,149 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     }): Promise<StudySession | null> => {
       if (!activeTimer) return null;
 
-      const finalDurationSeconds = computeTotalFocusSeconds(activeTimer);
+      const timerSnapshot = activeTimer;
+      const finalDurationSeconds = computeTotalFocusSeconds(timerSnapshot);
       if (finalDurationSeconds < 30) {
         addToast({
           title: 'Session Discarded',
           description: 'Sessions shorter than 30 seconds are not saved.',
           variant: 'default',
         });
-        await persistActiveTimer(null);
+        await persistActiveTimer(null, timerSnapshot.idempotencyKey);
         if (isNativeApp) {
-          try {
-            await stopForegroundTimer({ discard: true });
-          } catch (bridgeErr) {
+          stopForegroundTimer({ discard: true }).catch((bridgeErr) => {
             console.warn('[TimerContext] Failed to stop native timer (discard):', bridgeErr);
-          }
+          });
         }
         return null;
       }
 
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - finalDurationSeconds * 1000);
+      const nowIso = endTime.toISOString();
+      const finalIdempotencyKey = `${timerSnapshot.idempotencyKey}_final`;
+      const tempId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
       const payload = {
-        subjectId: activeTimer.subjectId,
+        subjectId: timerSnapshot.subjectId,
         startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
+        endTime: nowIso,
         durationSeconds: finalDurationSeconds,
-        topic: activeTimer.topic,
-        notes: opts?.notes !== undefined ? opts.notes : activeTimer.notes,
+        topic: timerSnapshot.topic,
+        notes: opts?.notes !== undefined ? opts.notes : timerSnapshot.notes || '',
         productivityRating: opts?.productivityRating || 5,
         sessionType: 'timer' as const,
-        idempotencyKey: `${activeTimer.idempotencyKey}_final`,
+        idempotencyKey: finalIdempotencyKey,
+        clearActiveTimer: true,
         clientDeviceId: getClientDeviceId(),
       };
 
-      try {
-        const res = await createStudySessionAction(payload);
-        await persistActiveTimer(null);
+      const optimisticSession: StudySession = {
+        id: tempId,
+        userId: user?.uid || timerSnapshot.userId || '',
+        subjectId: payload.subjectId,
+        idempotencyKey: finalIdempotencyKey,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        durationSeconds: finalDurationSeconds,
+        topic: payload.topic || 'Focused Study',
+        notes: payload.notes || '',
+        productivityRating: payload.productivityRating,
+        sessionType: 'timer',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
 
-        if (isNativeApp) {
-          try {
-            await stopForegroundTimer({
-              productivityRating: payload.productivityRating,
-              notes: payload.notes,
-              discard: true, // Prevent native Android from re-queueing a duplicate to Room
-            });
-          } catch (bridgeErr) {
-            console.warn('[TimerContext] Failed to stop native timer:', bridgeErr);
-          }
-        }
+      // 1. Instant 0ms optimistic UI updates (session logged, timer cleared, native notification dismissed, chime & toast)
+      insertOptimisticSession(optimisticSession);
+      await persistActiveTimer(null, timerSnapshot.idempotencyKey);
 
-        if (data?.notificationPreferences?.soundChimesEnabled !== false) {
-          playTimerChime('focus_end');
-        }
-
-        addToast({
-          title: 'Study Session Saved',
-          description: `Recorded ${Math.max(1, Math.round(finalDurationSeconds / 60))} minutes of study.`,
-          variant: 'success',
+      if (isNativeApp) {
+        stopForegroundTimer({
+          productivityRating: payload.productivityRating,
+          notes: payload.notes,
+          discard: true, // Prevent native Android from re-queueing a duplicate to Room
+        }).catch((bridgeErr) => {
+          console.warn('[TimerContext] Failed to stop native timer:', bridgeErr);
         });
+      }
 
-        if (res.success && (res as any).newlyUnlockedAchievements?.length > 0) {
-          for (const achTitle of (res as any).newlyUnlockedAchievements) {
-            addToast({
-              title: `Achievement Unlocked: ${achTitle}`,
-              description: 'New milestone earned!',
-              variant: 'success',
-            });
-          }
-        }
-        await refreshWorkspace();
-        return (res as any).session || null;
-      } catch (err: any) {
-        console.error('Failed to persist study session over network:', err);
-        let queueSaved = false;
+      if (data?.notificationPreferences?.soundChimesEnabled !== false) {
+        playTimerChime('focus_end');
+      }
+
+      addToast({
+        title: 'Study Session Saved',
+        description: `Recorded ${Math.max(1, Math.round(finalDurationSeconds / 60))} minutes of study.`,
+        variant: 'success',
+      });
+
+      // 2. Non-blocking background cloud persistence with full offline queue & rollback safety
+      (async () => {
         try {
-          const queueKey = 'sp_unsaved_study_sessions';
-          const rawQueue = localStorage.getItem(queueKey);
-          const queue = rawQueue ? JSON.parse(rawQueue) : [];
-          queue.push({
-            ...payload,
-            queuedAt: new Date().toISOString(),
-            error: err.message || 'Network error',
-          });
-          localStorage.setItem(queueKey, JSON.stringify(queue));
-          queueSaved = true;
-        } catch (queueErr) {
-          console.error('Failed to write to sp_unsaved_study_sessions:', queueErr);
-        }
+          const res = await createStudySessionAction(payload);
+          if (res.success && (res as any).session) {
+            reconcileOptimisticSession(tempId, (res as any).session as StudySession);
+          }
 
-        if (queueSaved) {
-          await persistActiveTimer(null);
-          if (isNativeApp) {
-            try {
-              await stopForegroundTimer({
-                productivityRating: payload.productivityRating,
-                notes: payload.notes,
-                discard: true, // Prevent native Android from re-queueing a duplicate to Room
+          if (res.success && (res as any).newlyUnlockedAchievements?.length > 0) {
+            for (const achTitle of (res as any).newlyUnlockedAchievements) {
+              addToast({
+                title: `Achievement Unlocked: ${achTitle}`,
+                description: 'New milestone earned!',
+                variant: 'success',
               });
-            } catch (bridgeErr) {
-              console.warn('[TimerContext] Failed to stop native timer on offline save:', bridgeErr);
             }
           }
-          addToast({
-            title: 'Session Saved to Offline Queue',
-            description: 'Network issue detected. Session saved locally on device and will sync automatically.',
-            variant: 'default',
-          });
-        } else {
-          // If queue saving failed, DO NOT wipe active timer! Retain it and alert the user so study time is never lost
-          addToast({
-            title: 'Failed to Save Study Session',
-            description: 'Network and offline storage both failed. Your timer has been kept active so you can retry.',
-            variant: 'error',
-          });
+
+          refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+        } catch (err: any) {
+          console.error('Failed to persist study session over network:', err);
+          let queueSaved = false;
+          try {
+            const queueKey = 'sp_unsaved_study_sessions';
+            const rawQueue = localStorage.getItem(queueKey);
+            const queue = rawQueue ? JSON.parse(rawQueue) : [];
+            queue.push({
+              ...payload,
+              queuedAt: new Date().toISOString(),
+              error: err.message || 'Network error',
+            });
+            localStorage.setItem(queueKey, JSON.stringify(queue));
+            queueSaved = true;
+          } catch (queueErr) {
+            console.error('Failed to write to sp_unsaved_study_sessions:', queueErr);
+          }
+
+          if (queueSaved) {
+            addToast({
+              title: 'Session Saved to Offline Queue',
+              description: 'Network issue detected. Session saved locally on device and will sync automatically.',
+              variant: 'default',
+            });
+          } else {
+            // If BOTH network and localStorage failed, roll back optimistic session and restore active timer so zero study time is lost!
+            removeOptimisticSession(tempId);
+            await persistActiveTimer(timerSnapshot);
+            addToast({
+              title: 'Failed to Save Study Session',
+              description: 'Network and offline storage both failed. Your timer has been kept active so you can retry.',
+              variant: 'error',
+            });
+          }
         }
-        return null;
-      }
+      })();
+
+      return optimisticSession;
     },
     [
+      user?.uid,
       activeTimer,
       computeTotalFocusSeconds,
       persistActiveTimer,
+      insertOptimisticSession,
+      reconcileOptimisticSession,
+      removeOptimisticSession,
       refreshWorkspace,
       data?.notificationPreferences?.soundChimesEnabled,
       addToast,
@@ -526,21 +550,27 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetTimer = useCallback(async () => {
+    const keyToClear = activeTimer?.idempotencyKey;
     dismissRecoveredNotice();
-    await persistActiveTimer(null);
+    await persistActiveTimer(null, keyToClear);
     if (isNativeApp) {
-      try {
-        await stopForegroundTimer({ discard: true });
-      } catch (bridgeErr) {
+      stopForegroundTimer({ discard: true }).catch((bridgeErr) => {
         console.warn('[TimerContext] Failed to stop native timer on reset:', bridgeErr);
-      }
+      });
     }
     addToast({
       title: 'Timer Reset',
       description: 'Unfinished timer session was discarded.',
       variant: 'default',
     });
-  }, [dismissRecoveredNotice, persistActiveTimer, addToast, isNativeApp, stopForegroundTimer]);
+  }, [
+    activeTimer?.idempotencyKey,
+    dismissRecoveredNotice,
+    persistActiveTimer,
+    addToast,
+    isNativeApp,
+    stopForegroundTimer,
+  ]);
 
   const skipPomodoroPhase = useCallback(async () => {
     if (!activeTimer || activeTimer.mode !== 'pomodoro') return;
@@ -658,7 +688,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         activeTimer.idempotencyKey === syncState.lastFinishedIdempotencyKey
       ) {
         // 1. Clear active timer locally so the spawner effect does NOT resurrect it
-        persistActiveTimer(null);
+        persistActiveTimer(null, activeTimer.idempotencyKey);
         // 2. Display the Option C auto-saved toast / notification
         if (syncState.pendingReview) {
           const mins = Math.max(1, Math.round(syncState.pendingReview.durationSeconds / 60));
@@ -669,13 +699,14 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
           });
           acknowledgeNativeReview(syncState.pendingReview.idempotencyKey);
         }
+        refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
         return true;
       }
     } catch (err) {
       console.warn('[TimerContext] Error reconciling with native state:', err);
     }
     return false;
-  }, [isNativeApp, activeTimer, persistActiveTimer, addToast]);
+  }, [isNativeApp, activeTimer, persistActiveTimer, addToast, refreshWorkspace]);
 
   useEffect(() => {
     if (!isNativeApp) return;

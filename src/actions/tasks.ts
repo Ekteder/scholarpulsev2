@@ -9,7 +9,6 @@ import {
 } from '@/lib/db/repository';
 import { TaskSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -41,7 +40,6 @@ export async function createTaskAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, task };
 }
 
@@ -71,7 +69,6 @@ export async function updateTaskAction(id: string, raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, task };
 }
 
@@ -86,6 +83,5 @@ export async function deleteTaskAction(id: string, clientDeviceId?: string) {
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }

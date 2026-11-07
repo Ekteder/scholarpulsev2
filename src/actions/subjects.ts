@@ -8,7 +8,6 @@ import {
 } from '@/lib/db/repository';
 import { SubjectSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -31,7 +30,6 @@ export async function createSubjectAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, subject };
 }
 
@@ -50,7 +48,6 @@ export async function updateSubjectAction(id: string, raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, subject };
 }
 
@@ -65,6 +62,5 @@ export async function deleteSubjectAction(id: string, clientDeviceId?: string) {
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }

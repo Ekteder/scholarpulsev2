@@ -1,5 +1,6 @@
 'use server';
 
+import { after } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import {
   getUserActiveTimer,
@@ -38,62 +39,85 @@ export async function syncActiveTimerAction(raw: unknown) {
       clientDeviceId: parsed.clientDeviceId,
     });
 
-    // Fan out to Android native TimerForegroundService via high-priority data push
+    const syncedTimer = result.timer;
+    const originDeviceId = parsed.clientDeviceId || '';
+    const targetUid = user.uid;
+
+    // Non-blocking background fan-out to Android native TimerForegroundService (kept alive via Next.js after() / waitUntil)
+    after(async () => {
+      try {
+        const { sendMulticastFCM } = await import('@/lib/fcm');
+        const action = syncedTimer.status === 'paused' ? 'PAUSE' : 'RESUME';
+        await sendMulticastFCM(targetUid, {
+          title: '',
+          body: '',
+          priority: 'high',
+          channelId: 'scholarpulse_timer_channel',
+          data: {
+            type: 'timer_state',
+            action,
+            accumulatedSeconds: String(syncedTimer.accumulatedSeconds || 0),
+            updatedAt: String(Date.now()),
+            originDeviceId,
+            userId: targetUid,
+          },
+        });
+      } catch (fcmErr) {
+        console.warn('Failed to fan out timer update to FCM:', fcmErr);
+      }
+    });
+  }
+
+  return { success: true, ...result };
+}
+
+export async function deleteActiveTimerAction(
+  clientDeviceId?: string,
+  expectedIdempotencyKey?: string
+) {
+  const user = await requireUser();
+  const delRes = await deleteActiveTimer(user.uid, expectedIdempotencyKey);
+
+  // If a specific timer key was targeted and nothing was deleted, check whether a NEWER timer has already started
+  if (expectedIdempotencyKey && !delRes.deleted) {
+    const current = await getUserActiveTimer(user.uid);
+    if (current && current.idempotencyKey !== expectedIdempotencyKey) {
+      // Newer timer already active; do not broadcast a stale STOP event
+      return { success: true };
+    }
+  }
+
+  await publishSyncEvent({
+    userId: user.uid,
+    eventType: 'timer:delete',
+    payload: expectedIdempotencyKey ? { idempotencyKey: expectedIdempotencyKey } : {},
+    clientDeviceId,
+  });
+
+  const targetUid = user.uid;
+  const originDeviceId = clientDeviceId || '';
+
+  // Non-blocking background fan-out STOP to Android native TimerForegroundService (kept alive via Next.js after() / waitUntil)
+  after(async () => {
     try {
       const { sendMulticastFCM } = await import('@/lib/fcm');
-      const action = result.timer.status === 'paused' ? 'PAUSE' : 'RESUME';
-      await sendMulticastFCM(user.uid, {
+      await sendMulticastFCM(targetUid, {
         title: '',
         body: '',
         priority: 'high',
         channelId: 'scholarpulse_timer_channel',
         data: {
           type: 'timer_state',
-          action,
-          accumulatedSeconds: String(result.timer.accumulatedSeconds || 0),
+          action: 'STOP',
           updatedAt: String(Date.now()),
-          originDeviceId: parsed.clientDeviceId || '',
-          userId: user.uid,
+          originDeviceId,
+          userId: targetUid,
         },
       });
     } catch (fcmErr) {
-      console.warn('Failed to fan out timer update to FCM:', fcmErr);
+      console.warn('Failed to fan out timer stop to FCM:', fcmErr);
     }
-  }
-
-  return { success: true, ...result };
-}
-
-export async function deleteActiveTimerAction(clientDeviceId?: string) {
-  const user = await requireUser();
-  await deleteActiveTimer(user.uid);
-
-  await publishSyncEvent({
-    userId: user.uid,
-    eventType: 'timer:delete',
-    payload: {},
-    clientDeviceId,
   });
-
-  // Fan out STOP to Android native TimerForegroundService
-  try {
-    const { sendMulticastFCM } = await import('@/lib/fcm');
-    await sendMulticastFCM(user.uid, {
-      title: '',
-      body: '',
-      priority: 'high',
-      channelId: 'scholarpulse_timer_channel',
-      data: {
-        type: 'timer_state',
-        action: 'STOP',
-        updatedAt: String(Date.now()),
-        originDeviceId: clientDeviceId || '',
-        userId: user.uid,
-      },
-    });
-  } catch (fcmErr) {
-    console.warn('Failed to fan out timer stop to FCM:', fcmErr);
-  }
 
   return { success: true };
 }

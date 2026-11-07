@@ -1,14 +1,15 @@
 'use server';
 
+import { after } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import {
   createStudySession,
   updateStudySession,
   deleteStudySession,
+  recalculateGoalsAndAchievements,
 } from '@/lib/db/repository';
 import { StudySessionSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -36,9 +37,24 @@ export async function createStudySessionAction(raw: unknown) {
       },
       clientDeviceId,
     });
+
+    const targetUid = user.uid;
+    after(async () => {
+      try {
+        const stats = await recalculateGoalsAndAchievements(targetUid);
+        await publishSyncEvent({
+          userId: targetUid,
+          eventType: 'goals:recalculated',
+          payload: {
+            newlyUnlockedAchievements: stats?.newlyUnlocked || [],
+          },
+        });
+      } catch (err) {
+        console.warn('Background goal/achievement recalculation warning:', err);
+      }
+    });
   }
 
-  revalidatePath('/');
   return { success: true, ...result };
 }
 
@@ -59,9 +75,24 @@ export async function updateStudySessionAction(id: string, raw: unknown) {
       payload: { session },
       clientDeviceId,
     });
+
+    const targetUid = user.uid;
+    after(async () => {
+      try {
+        const stats = await recalculateGoalsAndAchievements(targetUid);
+        await publishSyncEvent({
+          userId: targetUid,
+          eventType: 'goals:recalculated',
+          payload: {
+            newlyUnlockedAchievements: stats?.newlyUnlocked || [],
+          },
+        });
+      } catch (err) {
+        console.warn('Background goal/achievement recalculation warning:', err);
+      }
+    });
   }
 
-  revalidatePath('/');
   return { success: true, session };
 }
 
@@ -76,6 +107,5 @@ export async function deleteStudySessionAction(id: string, clientDeviceId?: stri
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }

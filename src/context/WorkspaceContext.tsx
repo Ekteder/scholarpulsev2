@@ -119,10 +119,20 @@ export interface WorkspaceContextValue {
   activeTimer: ActiveTimerSession | null;
   recoveredSessionNotice: boolean;
   dismissRecoveredNotice: () => void;
-  persistActiveTimer: (nextTimer: ActiveTimerSession | null) => Promise<void>;
+  persistActiveTimer: (
+    nextTimer: ActiveTimerSession | null,
+    clearedIdempotencyKey?: string
+  ) => Promise<void>;
+
+  // Optimistic session helpers for 0ms timer completion
+  insertOptimisticSession: (session: StudySession) => void;
+  reconcileOptimisticSession: (tempId: string, realSession: StudySession) => void;
+  removeOptimisticSession: (tempId: string) => void;
 
   // CRUD actions (All routed via Server Actions)
-  refreshWorkspace: () => Promise<void>;
+  refreshWorkspace: (
+    opts?: { silent?: boolean; preserveLocalTimer?: boolean } | React.SyntheticEvent | unknown
+  ) => Promise<void>;
   completeOnboarding: (payload: any) => Promise<void>;
   updateProfile: (payload: Partial<Profile>) => Promise<void>;
   setThemePreference: (theme: 'light' | 'dark' | 'system') => void;
@@ -250,12 +260,25 @@ export function WorkspaceProvider({
 
   const initialTimerRecoveryChecked = useRef(false);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const needsFollowUpRefreshRef = useRef(false);
   const lastLocalThemeChangeRef = useRef<number>(0);
   const { setTheme } = useTheme();
   const setThemeRef = useRef(setTheme);
   setThemeRef.current = setTheme;
   const dataRef = useRef(data);
   dataRef.current = data;
+  const activeTimerRef = useRef(activeTimer);
+  activeTimerRef.current = activeTimer;
+  const pendingDeletedIdsRef = useRef<Set<string>>(new Set());
+  const recentlyClearedTimerKeyRef = useRef<{ key: string; clearedAt: number } | null>(null);
+
+  const isRecentlyClearedTimer = useCallback((idempotencyKey?: string | null): boolean => {
+    if (!idempotencyKey || !recentlyClearedTimerKeyRef.current) return false;
+    return (
+      recentlyClearedTimerKeyRef.current.key === idempotencyKey &&
+      Date.now() - recentlyClearedTimerKeyRef.current.clearedAt < 60000
+    );
+  }, []);
 
   const cacheWorkspaceLocally = useCallback((uid: string, wData: WorkspaceData) => {
     if (typeof window === 'undefined') return;
@@ -306,119 +329,197 @@ export function WorkspaceProvider({
   }, []);
 
   // Fetch full workspace state via Server Action
-  const refreshWorkspace = useCallback(async () => {
-    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+  const refreshWorkspace = useCallback(
+    async (
+      rawOpts?: { silent?: boolean; preserveLocalTimer?: boolean } | React.SyntheticEvent | unknown
+    ) => {
+      const opts =
+        rawOpts && typeof rawOpts === 'object' && !('nativeEvent' in rawOpts)
+          ? (rawOpts as { silent?: boolean; preserveLocalTimer?: boolean })
+          : undefined;
 
-    const promise = (async () => {
-      try {
-        setWorkspaceLoading(true);
-        setWorkspaceError(null);
-
-        // If user is not yet known, verify session first
-        let activeUser = user;
-        if (!activeUser) {
-          const session = await getInitialWorkspaceSessionAction();
-          if (session.success && session.user) {
-            setUser(session.user);
-            activeUser = session.user;
-            if (session.user.isBanned) {
-              return;
-            }
-            if (session.data) {
-              const workspace = session.data as unknown as WorkspaceData;
-              setData(workspace);
-              cacheWorkspaceLocally(session.user.uid, workspace);
-              return;
-            }
-          }
-        }
-
-        const res = await getWorkspaceDataAction();
-        if (!res.success || !res.data) {
-          throw new Error('Failed to load workspace data');
-        }
-
-        const workspace = res.data;
-        setData(workspace as unknown as WorkspaceData);
-        if (activeUser?.uid) {
-          cacheWorkspaceLocally(activeUser.uid, workspace as unknown as WorkspaceData);
-        }
-
-        // Sync theme with next-themes if specified in profile, respecting recent local actions
-        if (workspace.profile?.themePreference) {
-          const profileTheme = workspace.profile.themePreference as 'light' | 'dark' | 'system';
-          const localTheme = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
-          if (!localTheme || Date.now() - lastLocalThemeChangeRef.current > 10000) {
-            if (localTheme !== profileTheme) {
-              applyThemeToDOM(profileTheme);
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('theme', profileTheme);
-                } catch {}
-              }
-              setThemeRef.current?.(profileTheme);
-            }
-          }
-        }
-
-        // Active timer sync
-        const uid = workspace.profile?.userId;
-        if (uid && typeof window !== 'undefined') {
-          const localKey = `scholarpulse_timer_${uid}`;
-          const localRaw = localStorage.getItem(localKey);
-          let resolvedTimer: ActiveTimerSession | null = workspace.activeTimer;
-
-          if (localRaw) {
-            try {
-              if (!workspace.activeTimer) {
-                // Cloud confirms no active timer: remove stale local cache, do not resurrect!
-                resolvedTimer = null;
-                localStorage.removeItem(localKey);
-              } else {
-                resolvedTimer = workspace.activeTimer;
-              }
-            } catch {
-              localStorage.removeItem(localKey);
-            }
-          }
-
-          if (resolvedTimer) {
-            localStorage.setItem(localKey, JSON.stringify(resolvedTimer));
-            setActiveTimer(resolvedTimer);
-            if (!initialTimerRecoveryChecked.current) {
-              initialTimerRecoveryChecked.current = true;
-              setRecoveredSessionNotice(true);
-            }
-          } else {
-            localStorage.removeItem(localKey);
-            setActiveTimer(null);
-            initialTimerRecoveryChecked.current = true;
-          }
-        }
-      } catch (err: any) {
-        console.error('refreshWorkspace error:', err);
-        setWorkspaceError(err?.message || 'Failed to load workspace.');
-        if (err?.message?.toLowerCase().includes('banned')) {
-          setUser((prev) => (prev ? { ...prev, isBanned: true } : null));
-          setData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  profile: prev.profile ? { ...prev.profile, isBanned: true } : prev.profile,
-                }
-              : null
-          );
-          setActiveTimer(null);
-        }
-      } finally {
-        setWorkspaceLoading(false);
-        refreshPromiseRef.current = null;
+      if (refreshPromiseRef.current) {
+        needsFollowUpRefreshRef.current = true;
+        return refreshPromiseRef.current;
       }
-    })();
 
-    refreshPromiseRef.current = promise;
-    return promise;
-  }, []);
+      const promise = (async () => {
+        let currentOpts = opts;
+        try {
+          if (!currentOpts?.silent) {
+            setWorkspaceLoading(true);
+          }
+          setWorkspaceError(null);
+
+          do {
+            needsFollowUpRefreshRef.current = false;
+
+            // If user is not yet known, verify session first
+            let activeUser = user;
+            if (!activeUser) {
+              const session = await getInitialWorkspaceSessionAction();
+              if (session.success && session.user) {
+                setUser(session.user);
+                activeUser = session.user;
+                if (session.user.isBanned) {
+                  return;
+                }
+                if (session.data) {
+                  const workspace = session.data as unknown as WorkspaceData;
+                  setData(workspace);
+                  cacheWorkspaceLocally(session.user.uid, workspace);
+                  return;
+                }
+              }
+            }
+
+            const res = await getWorkspaceDataAction();
+            if (!res.success || !res.data) {
+              throw new Error('Failed to load workspace data');
+            }
+
+            const workspace = res.data as unknown as WorkspaceData;
+            setData((prev) => {
+              const pendingDeletes = pendingDeletedIdsRef.current;
+              const filteredSubjects = (workspace.subjects || []).filter(
+                (s) => !pendingDeletes.has(s.id)
+              );
+              let mergedSessions = (workspace.studySessions || []).filter(
+                (s) => !pendingDeletes.has(s.id) && !pendingDeletes.has(s.subjectId)
+              );
+              const filteredTasks = (workspace.tasks || []).filter(
+                (t) => !pendingDeletes.has(t.id) && (!t.subjectId || !pendingDeletes.has(t.subjectId))
+              );
+              const filteredSchedules = (workspace.schedules || []).filter(
+                (s) => !pendingDeletes.has(s.id) && !pendingDeletes.has(s.subjectId)
+              );
+              const filteredGoals = (workspace.goals || []).filter(
+                (g) => !pendingDeletes.has(g.id) && (!g.subjectId || !pendingDeletes.has(g.subjectId))
+              );
+
+              // Retain any in-flight optimistic sessions that haven't arrived in server snapshot yet
+              if (prev?.studySessions) {
+                const serverKeys = new Set(
+                  mergedSessions.map((s) => s.idempotencyKey).filter(Boolean)
+                );
+                const inFlightOptimistic = prev.studySessions.filter(
+                  (s) =>
+                    String(s.id).startsWith('optimistic_') &&
+                    !pendingDeletes.has(s.id) &&
+                    !pendingDeletes.has(s.subjectId) &&
+                    (!s.idempotencyKey || !serverKeys.has(s.idempotencyKey))
+                );
+                if (inFlightOptimistic.length > 0) {
+                  mergedSessions = [...inFlightOptimistic, ...mergedSessions].sort(
+                    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+                  );
+                }
+              }
+
+              const nextWorkspace: WorkspaceData = {
+                ...workspace,
+                subjects: filteredSubjects,
+                studySessions: mergedSessions,
+                tasks: filteredTasks,
+                schedules: filteredSchedules,
+                goals: filteredGoals,
+              };
+
+              if (activeUser?.uid) {
+                cacheWorkspaceLocally(activeUser.uid, nextWorkspace);
+              }
+              return nextWorkspace;
+            });
+
+            // Sync theme with next-themes if specified in profile, respecting recent local actions
+            if (workspace.profile?.themePreference) {
+              const profileTheme = workspace.profile.themePreference as 'light' | 'dark' | 'system';
+              const localTheme = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
+              if (!localTheme || Date.now() - lastLocalThemeChangeRef.current > 10000) {
+                if (localTheme !== profileTheme) {
+                  applyThemeToDOM(profileTheme);
+                  if (typeof window !== 'undefined') {
+                    try {
+                      localStorage.setItem('theme', profileTheme);
+                    } catch {}
+                  }
+                  setThemeRef.current?.(profileTheme);
+                }
+              }
+            }
+
+            // Active timer sync (skipped during background session/goal refreshes to avoid timer race conditions)
+            const uid = workspace.profile?.userId;
+            if (!currentOpts?.preserveLocalTimer && uid && typeof window !== 'undefined') {
+              const localKey = `scholarpulse_timer_${uid}`;
+              const localRaw = localStorage.getItem(localKey);
+              let resolvedTimer: ActiveTimerSession | null = workspace.activeTimer;
+
+              // Anti-resurrection guard for timers cleared optimistically milliseconds ago
+              if (resolvedTimer && isRecentlyClearedTimer(resolvedTimer.idempotencyKey)) {
+                resolvedTimer = null;
+              }
+
+              if (localRaw) {
+                try {
+                  if (!resolvedTimer) {
+                    // Cloud confirms no active timer: remove stale local cache, do not resurrect!
+                    localStorage.removeItem(localKey);
+                  }
+                } catch {
+                  localStorage.removeItem(localKey);
+                }
+              }
+
+              if (resolvedTimer) {
+                localStorage.setItem(localKey, JSON.stringify(resolvedTimer));
+                setActiveTimer(resolvedTimer);
+                if (!initialTimerRecoveryChecked.current) {
+                  initialTimerRecoveryChecked.current = true;
+                  setRecoveredSessionNotice(true);
+                }
+              } else {
+                localStorage.removeItem(localKey);
+                setActiveTimer(null);
+                initialTimerRecoveryChecked.current = true;
+              }
+            }
+
+            if (needsFollowUpRefreshRef.current) {
+              currentOpts = { silent: true, preserveLocalTimer: true };
+            }
+          } while (needsFollowUpRefreshRef.current);
+        } catch (err: any) {
+          needsFollowUpRefreshRef.current = false;
+          console.error('refreshWorkspace error:', err);
+          if (!opts?.silent) {
+            setWorkspaceError(err?.message || 'Failed to load workspace.');
+          }
+          if (err?.message?.toLowerCase().includes('banned')) {
+            setUser((prev) => (prev ? { ...prev, isBanned: true } : null));
+            setData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    profile: prev.profile ? { ...prev.profile, isBanned: true } : prev.profile,
+                  }
+                : null
+            );
+            setActiveTimer(null);
+          }
+        } finally {
+          if (!opts?.silent) {
+            setWorkspaceLoading(false);
+          }
+          refreshPromiseRef.current = null;
+        }
+      })();
+
+      refreshPromiseRef.current = promise;
+      return promise;
+    },
+    [user, cacheWorkspaceLocally, isRecentlyClearedTimer]
+  );
 
   // Central Real-time Sync Event Handler (SSE + BroadcastChannel)
   const handleIncomingSyncEvent = useCallback(
@@ -440,6 +541,9 @@ export function WorkspaceProvider({
           });
           const initialTimer = payload?.activeTimer as ActiveTimerSession | null | undefined;
           if (initialTimer) {
+            if (isRecentlyClearedTimer(initialTimer.idempotencyKey)) {
+              break;
+            }
             setActiveTimer((current) => {
               if (
                 !current ||
@@ -468,6 +572,7 @@ export function WorkspaceProvider({
         case 'timer:update': {
           const incomingTimer = payload?.timer as ActiveTimerSession | undefined;
           if (!incomingTimer) return;
+          if (isRecentlyClearedTimer(incomingTimer.idempotencyKey)) return;
 
           // Forward to Native Android Bridge if running inside native shell
           if (typeof window !== 'undefined' && (window as any).ScholarPulseBridge?.call) {
@@ -516,6 +621,18 @@ export function WorkspaceProvider({
         }
 
         case 'timer:delete': {
+          const deletedKey = payload?.idempotencyKey as string | undefined;
+          if (deletedKey) {
+            recentlyClearedTimerKeyRef.current = { key: deletedKey, clearedAt: Date.now() };
+            // If a brand-new timer with a DIFFERENT idempotencyKey is already running, ignore stale delete
+            if (
+              activeTimerRef.current &&
+              activeTimerRef.current.idempotencyKey !== deletedKey
+            ) {
+              break;
+            }
+          }
+
           if (typeof window !== 'undefined' && (window as any).ScholarPulseBridge?.call) {
             try {
               (window as any).ScholarPulseBridge.call('timer.onRemoteSync', {
@@ -582,19 +699,26 @@ export function WorkspaceProvider({
         }
 
         case 'session:create': {
-          const session = payload?.session;
+          const session = payload?.session as StudySession | undefined;
           if (session) {
             setData((prev) => {
               if (!prev) return null;
-              if (prev.studySessions.some((s) => s.id === session.id)) return prev;
+              const filtered = prev.studySessions.filter(
+                (s) =>
+                  s.id !== session.id &&
+                  !(session.idempotencyKey && s.idempotencyKey === session.idempotencyKey)
+              );
+              const nextSessions = [session, ...filtered].sort(
+                (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+              );
               return {
                 ...prev,
-                studySessions: [session, ...prev.studySessions],
+                studySessions: nextSessions,
               };
             });
           }
           if (!isFromSelf) {
-            refreshWorkspace().catch(() => {});
+            refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
           }
           break;
         }
@@ -613,7 +737,7 @@ export function WorkspaceProvider({
             });
           }
           if (!isFromSelf) {
-            refreshWorkspace().catch(() => {});
+            refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
           }
           break;
         }
@@ -630,7 +754,7 @@ export function WorkspaceProvider({
             });
           }
           if (!isFromSelf) {
-            refreshWorkspace().catch(() => {});
+            refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
           }
           break;
         }
@@ -952,6 +1076,19 @@ export function WorkspaceProvider({
           break;
         }
 
+        case 'goals:recalculated': {
+          const unlocked = payload?.newlyUnlockedAchievements as string[] | undefined;
+          if (unlocked && unlocked.length > 0) {
+            addToast({
+              title: 'Achievement Unlocked!',
+              description: `Earned: ${unlocked.join(', ')}`,
+              variant: 'success',
+            });
+          }
+          refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+          break;
+        }
+
         case 'workspace:refresh': {
           if (payload?.targetedAnnouncement !== undefined) {
             setData((prev) =>
@@ -967,7 +1104,7 @@ export function WorkspaceProvider({
             );
           }
           if (!isFromSelf) {
-            refreshWorkspace().catch(() => {});
+            refreshWorkspace({ silent: true }).catch(() => {});
           }
           break;
         }
@@ -1000,7 +1137,7 @@ export function WorkspaceProvider({
           break;
       }
     },
-    [refreshWorkspace]
+    [refreshWorkspace, isRecentlyClearedTimer, user]
   );
 
   // Connect native real-time sync (SSE + BroadcastChannel)
@@ -1135,34 +1272,115 @@ export function WorkspaceProvider({
     };
   }, [initialUser, cacheWorkspaceLocally]);
 
-  // Persist Active Timer via Server Action and Real-Time Broadcast
+  // Persist Active Timer via 0ms Optimistic State + Non-Blocking Background Sync
   const persistActiveTimer = useCallback(
-    async (nextTimer: ActiveTimerSession | null) => {
+    async (nextTimer: ActiveTimerSession | null, clearedIdempotencyKey?: string) => {
+      const keyToClear = clearedIdempotencyKey || activeTimerRef.current?.idempotencyKey;
+      if (!nextTimer && keyToClear) {
+        recentlyClearedTimerKeyRef.current = { key: keyToClear, clearedAt: Date.now() };
+      }
+
+      activeTimerRef.current = nextTimer;
       setActiveTimer(nextTimer);
+
       if (!user) return;
       const localKey = `scholarpulse_timer_${user.uid}`;
       const deviceId = getClientDeviceId();
 
       if (!nextTimer) {
         if (typeof window !== 'undefined') localStorage.removeItem(localKey);
-        broadcastLocal('timer:delete', {});
-        await deleteActiveTimerAction(deviceId).catch(() => {});
+        broadcastLocal('timer:delete', keyToClear ? { idempotencyKey: keyToClear } : {});
+        deleteActiveTimerAction(deviceId, keyToClear).catch((err) => {
+          console.warn('Background deleteActiveTimerAction failed:', err);
+        });
       } else {
         const timerWithDevice = { ...nextTimer, clientDeviceId: deviceId };
         if (typeof window !== 'undefined') {
           localStorage.setItem(localKey, JSON.stringify(timerWithDevice));
         }
         broadcastLocal('timer:update', { timer: timerWithDevice });
-        const res = await syncActiveTimerAction(timerWithDevice).catch(() => null);
-        if (res?.success && res.timer) {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(localKey, JSON.stringify(res.timer));
-          }
-          setActiveTimer(res.timer);
-        }
+        syncActiveTimerAction(timerWithDevice)
+          .then((res) => {
+            if (res?.success && res.timer) {
+              const serverTimer = res.timer;
+              if (isRecentlyClearedTimer(serverTimer.idempotencyKey)) return;
+              setActiveTimer((current) => {
+                if (!current) return null;
+                if (current.idempotencyKey !== serverTimer.idempotencyKey) return current;
+                if ((current.stateVersion || 0) > (serverTimer.stateVersion || 0)) return current;
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem(localKey, JSON.stringify(serverTimer));
+                }
+                return serverTimer;
+              });
+            }
+          })
+          .catch((err) => {
+            console.warn('Background syncActiveTimerAction failed:', err);
+          });
       }
     },
-    [user, broadcastLocal]
+    [user, broadcastLocal, isRecentlyClearedTimer]
+  );
+
+  // Optimistic study session helpers for 0ms timer completion
+  const insertOptimisticSession = useCallback(
+    (session: StudySession) => {
+      setData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.studySessions.filter(
+          (s) =>
+            s.id !== session.id &&
+            !(session.idempotencyKey && s.idempotencyKey === session.idempotencyKey)
+        );
+        const nextSessions = [session, ...filtered].sort(
+          (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        );
+        const updated = { ...prev, studySessions: nextSessions };
+        if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+        return updated;
+      });
+      broadcastLocal('session:create', { session });
+    },
+    [broadcastLocal, cacheWorkspaceLocally]
+  );
+
+  const reconcileOptimisticSession = useCallback(
+    (tempId: string, realSession: StudySession) => {
+      setData((prev) => {
+        if (!prev) return null;
+        const filtered = prev.studySessions.filter(
+          (s) =>
+            s.id !== tempId &&
+            s.id !== realSession.id &&
+            !(realSession.idempotencyKey && s.idempotencyKey === realSession.idempotencyKey)
+        );
+        const nextSessions = [realSession, ...filtered].sort(
+          (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        );
+        const updated = { ...prev, studySessions: nextSessions };
+        if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+        return updated;
+      });
+      broadcastLocal('session:create', { session: realSession });
+    },
+    [broadcastLocal, cacheWorkspaceLocally]
+  );
+
+  const removeOptimisticSession = useCallback(
+    (tempId: string) => {
+      setData((prev) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          studySessions: prev.studySessions.filter((s) => s.id !== tempId),
+        };
+        if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+        return updated;
+      });
+      broadcastLocal('session:delete', { sessionId: tempId });
+    },
+    [broadcastLocal, cacheWorkspaceLocally]
   );
 
   // Complete onboarding
@@ -1300,42 +1518,220 @@ export function WorkspaceProvider({
   }, [addToast, broadcastLocal]);
 
   const deleteSubject = useCallback(async (id: string) => {
-    await deleteSubjectAction(id, getClientDeviceId());
-    setData((prev) => prev ? {
-      ...prev,
-      subjects: prev.subjects.filter((s) => s.id !== id),
-    } : null);
+    const prevSnapshot = dataRef.current;
+    pendingDeletedIdsRef.current.add(id);
+    // 0ms optimistic removal (subject + cascaded sessions/tasks/schedules/goals)
+    setData((prev) => {
+      if (!prev) return null;
+      const updated = {
+        ...prev,
+        subjects: prev.subjects.filter((s) => s.id !== id),
+        studySessions: prev.studySessions.filter((s) => s.subjectId !== id),
+        tasks: prev.tasks.filter((t) => t.subjectId !== id),
+        schedules: prev.schedules.filter((s) => s.subjectId !== id),
+        goals: prev.goals.filter((g) => g.subjectId !== id),
+      };
+      if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+      return updated;
+    });
     broadcastLocal('subject:delete', { subjectId: id });
     addToast({ title: 'Subject Deleted', description: 'Subject and its records removed.', variant: 'default' });
-  }, [addToast, broadcastLocal]);
 
-  // Study Sessions CRUD
+    deleteSubjectAction(id, getClientDeviceId())
+      .then(() => {
+        pendingDeletedIdsRef.current.delete(id);
+        refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+      })
+      .catch((err) => {
+        pendingDeletedIdsRef.current.delete(id);
+        console.error('Failed to delete subject:', err);
+        if (prevSnapshot) {
+          setData(prevSnapshot);
+          if (prevSnapshot.profile?.userId) {
+            cacheWorkspaceLocally(prevSnapshot.profile.userId, prevSnapshot);
+          }
+        }
+        addToast({
+          title: 'Failed to Delete Subject',
+          description: err?.message || 'Could not delete subject. Changes restored.',
+          variant: 'error',
+        });
+      });
+  }, [addToast, broadcastLocal, cacheWorkspaceLocally, refreshWorkspace]);
+
+  // Study Sessions CRUD (0ms Optimistic UI + Background Reconciliation)
   const createSession = useCallback(async (payload: any) => {
-    const res = await createStudySessionAction({ ...payload, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.session) throw new Error('Failed to save study session');
-    const session = res.session as StudySession;
-    broadcastLocal('session:create', { session });
-    await refreshWorkspace();
-    addToast({ title: 'Session Saved', description: 'Study activity logged successfully.', variant: 'success' });
-    return session;
-  }, [addToast, refreshWorkspace, broadcastLocal]);
+    const nowIso = new Date().toISOString();
+    const startMs = new Date(payload.startTime).getTime();
+    const endMs = new Date(payload.endTime).getTime();
+    const durationSeconds =
+      payload.durationSeconds || Math.max(1, Math.round((endMs - startMs) / 1000));
+    const idempotencyKey =
+      payload.idempotencyKey || `manual_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const tempId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const optimisticSession: StudySession = {
+      id: tempId,
+      userId: user?.uid || dataRef.current?.profile?.userId || '',
+      subjectId: payload.subjectId,
+      idempotencyKey,
+      startTime: payload.startTime,
+      endTime: payload.endTime,
+      durationSeconds,
+      topic: payload.topic?.trim() || 'Focused Study',
+      notes: payload.notes || '',
+      productivityRating: payload.productivityRating || 4,
+      sessionType: payload.sessionType || 'manual',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    insertOptimisticSession(optimisticSession);
+
+    try {
+      const res = await createStudySessionAction({
+        ...payload,
+        durationSeconds,
+        idempotencyKey,
+        clientDeviceId: getClientDeviceId(),
+      });
+      if (!res.success || !res.session) throw new Error('Failed to save study session');
+      const session = res.session as StudySession;
+      reconcileOptimisticSession(tempId, session);
+      addToast({ title: 'Session Saved', description: 'Study activity logged successfully.', variant: 'success' });
+      refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+      return session;
+    } catch (err) {
+      removeOptimisticSession(tempId);
+      throw err;
+    }
+  }, [
+    user?.uid,
+    addToast,
+    refreshWorkspace,
+    insertOptimisticSession,
+    reconcileOptimisticSession,
+    removeOptimisticSession,
+  ]);
 
   const updateSession = useCallback(async (id: string, payload: any) => {
-    const res = await updateStudySessionAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.session) throw new Error('Failed to update session');
-    const session = res.session as StudySession;
-    broadcastLocal('session:update', { session });
-    await refreshWorkspace();
-    addToast({ title: 'Session Updated', description: 'Session details modified.', variant: 'success' });
-    return session;
-  }, [addToast, refreshWorkspace, broadcastLocal]);
+    const prevSession = dataRef.current?.studySessions.find((s) => s.id === id);
+    if (prevSession) {
+      const nextStart = payload.startTime ?? prevSession.startTime;
+      const nextEnd = payload.endTime ?? prevSession.endTime;
+      const nextDuration =
+        payload.durationSeconds ??
+        Math.max(1, Math.round((new Date(nextEnd).getTime() - new Date(nextStart).getTime()) / 1000));
+      const optimisticUpdated: StudySession = {
+        ...prevSession,
+        ...payload,
+        durationSeconds: nextDuration,
+        updatedAt: new Date().toISOString(),
+      };
+      setData((prev) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          studySessions: prev.studySessions
+            .map((s) => (s.id === id ? optimisticUpdated : s))
+            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+        };
+        if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+        return updated;
+      });
+      broadcastLocal('session:update', { session: optimisticUpdated });
+    }
+
+    try {
+      const res = await updateStudySessionAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
+      if (!res.success || !res.session) throw new Error('Failed to update session');
+      const session = res.session as StudySession;
+      setData((prev) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          studySessions: prev.studySessions
+            .map((s) => (s.id === id ? session : s))
+            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+        };
+        if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+        return updated;
+      });
+      broadcastLocal('session:update', { session });
+      addToast({ title: 'Session Updated', description: 'Session details modified.', variant: 'success' });
+      refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+      return session;
+    } catch (err) {
+      if (prevSession) {
+        setData((prev) => {
+          if (!prev) return null;
+          const updated = {
+            ...prev,
+            studySessions: prev.studySessions
+              .map((s) => (s.id === id ? prevSession : s))
+              .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+          };
+          if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+          return updated;
+        });
+        broadcastLocal('session:update', { session: prevSession });
+      }
+      throw err;
+    }
+  }, [addToast, refreshWorkspace, broadcastLocal, cacheWorkspaceLocally]);
 
   const deleteSession = useCallback(async (id: string) => {
-    await deleteStudySessionAction(id, getClientDeviceId());
+    const prevSession = dataRef.current?.studySessions.find((s) => s.id === id);
+    pendingDeletedIdsRef.current.add(id);
+
+    // 1. Instant 0ms optimistic state removal
+    setData((prev) => {
+      if (!prev) return null;
+      const updated = {
+        ...prev,
+        studySessions: prev.studySessions.filter((s) => s.id !== id),
+      };
+      if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+      return updated;
+    });
     broadcastLocal('session:delete', { sessionId: id });
-    await refreshWorkspace();
     addToast({ title: 'Session Deleted', description: 'Session was removed from log.', variant: 'default' });
-  }, [addToast, refreshWorkspace, broadcastLocal]);
+
+    // If this was an unsynced optimistic session, skip server call
+    if (String(id).startsWith('optimistic_')) {
+      pendingDeletedIdsRef.current.delete(id);
+      return;
+    }
+
+    // 2. Non-blocking background server deletion + silent goal reconciliation
+    deleteStudySessionAction(id, getClientDeviceId())
+      .then(() => {
+        pendingDeletedIdsRef.current.delete(id);
+        refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+      })
+      .catch((err) => {
+        console.error('Failed to delete study session:', err);
+        pendingDeletedIdsRef.current.delete(id);
+        if (prevSession) {
+          setData((prev) => {
+            if (!prev) return null;
+            if (prev.studySessions.some((s) => s.id === prevSession.id)) return prev;
+            const restored = [prevSession, ...prev.studySessions].sort(
+              (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+            );
+            const updated = { ...prev, studySessions: restored };
+            if (prev.profile?.userId) cacheWorkspaceLocally(prev.profile.userId, updated);
+            return updated;
+          });
+          broadcastLocal('session:create', { session: prevSession });
+        }
+        addToast({
+          title: 'Failed to Delete Session',
+          description: err?.message || 'Network error while deleting session. Entry restored.',
+          variant: 'error',
+        });
+      });
+  }, [addToast, refreshWorkspace, broadcastLocal, cacheWorkspaceLocally]);
 
   // Tasks CRUD
   const createTask = useCallback(async (payload: any) => {
@@ -1349,25 +1745,91 @@ export function WorkspaceProvider({
   }, [addToast, broadcastLocal]);
 
   const updateTask = useCallback(async (id: string, payload: any) => {
-    const res = await updateTaskAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
-    if (!res.success || !res.task) throw new Error('Failed to update task');
-    const task = res.task as unknown as TaskItem;
-    setData((prev) => prev ? {
-      ...prev,
-      tasks: prev.tasks.map((t) => t.id === id ? task : t),
-    } : null);
-    broadcastLocal('task:update', { task });
-    return task;
+    const prevTask = dataRef.current?.tasks.find((t) => t.id === id);
+    if (prevTask) {
+      const optimisticTask: TaskItem = {
+        ...prevTask,
+        ...payload,
+        completedAt:
+          payload.status === 'completed'
+            ? new Date().toISOString()
+            : payload.status === 'pending' || payload.status === 'in_progress'
+              ? null
+              : prevTask.completedAt,
+        updatedAt: new Date().toISOString(),
+      };
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              tasks: prev.tasks.map((t) => (t.id === id ? optimisticTask : t)),
+            }
+          : null
+      );
+      broadcastLocal('task:update', { task: optimisticTask });
+    }
+
+    try {
+      const res = await updateTaskAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
+      if (!res.success || !res.task) throw new Error('Failed to update task');
+      const task = res.task as unknown as TaskItem;
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              tasks: prev.tasks.map((t) => (t.id === id ? task : t)),
+            }
+          : null
+      );
+      broadcastLocal('task:update', { task });
+      return task;
+    } catch (err) {
+      if (prevTask) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                tasks: prev.tasks.map((t) => (t.id === id ? prevTask : t)),
+              }
+            : null
+        );
+        broadcastLocal('task:update', { task: prevTask });
+      }
+      throw err;
+    }
   }, [broadcastLocal]);
 
   const deleteTask = useCallback(async (id: string) => {
-    await deleteTaskAction(id, getClientDeviceId());
+    const prevTask = dataRef.current?.tasks.find((t) => t.id === id);
+    pendingDeletedIdsRef.current.add(id);
     setData((prev) => prev ? {
       ...prev,
       tasks: prev.tasks.filter((t) => t.id !== id),
     } : null);
     broadcastLocal('task:delete', { taskId: id });
     addToast({ title: 'Task Deleted', description: 'Task removed.', variant: 'default' });
+
+    deleteTaskAction(id, getClientDeviceId())
+      .then(() => {
+        pendingDeletedIdsRef.current.delete(id);
+      })
+      .catch((err) => {
+        pendingDeletedIdsRef.current.delete(id);
+        console.error('Failed to delete task:', err);
+        if (prevTask) {
+          setData((prev) =>
+            prev && !prev.tasks.some((t) => t.id === prevTask.id)
+              ? { ...prev, tasks: [...prev.tasks, prevTask] }
+              : prev
+          );
+          broadcastLocal('task:create', { task: prevTask });
+        }
+        addToast({
+          title: 'Failed to Delete Task',
+          description: 'Network error while deleting task. Entry restored.',
+          variant: 'error',
+        });
+      });
   }, [addToast, broadcastLocal]);
 
   // Schedules CRUD
@@ -1394,13 +1856,36 @@ export function WorkspaceProvider({
   }, [broadcastLocal]);
 
   const deleteSchedule = useCallback(async (id: string) => {
-    await deleteScheduleAction(id, getClientDeviceId());
+    const prevSchedule = dataRef.current?.schedules.find((s) => s.id === id);
+    pendingDeletedIdsRef.current.add(id);
     setData((prev) => prev ? {
       ...prev,
       schedules: prev.schedules.filter((s) => s.id !== id),
     } : null);
     broadcastLocal('schedule:delete', { scheduleId: id });
     addToast({ title: 'Schedule Removed', description: 'Time slot deleted.', variant: 'default' });
+
+    deleteScheduleAction(id, getClientDeviceId())
+      .then(() => {
+        pendingDeletedIdsRef.current.delete(id);
+      })
+      .catch((err) => {
+        pendingDeletedIdsRef.current.delete(id);
+        console.error('Failed to delete schedule:', err);
+        if (prevSchedule) {
+          setData((prev) =>
+            prev && !prev.schedules.some((s) => s.id === prevSchedule.id)
+              ? { ...prev, schedules: [...prev.schedules, prevSchedule] }
+              : prev
+          );
+          broadcastLocal('schedule:create', { schedule: prevSchedule });
+        }
+        addToast({
+          title: 'Failed to Delete Schedule',
+          description: 'Network error while deleting time slot. Entry restored.',
+          variant: 'error',
+        });
+      });
   }, [addToast, broadcastLocal]);
 
   // Goals CRUD
@@ -1427,13 +1912,36 @@ export function WorkspaceProvider({
   }, [broadcastLocal]);
 
   const deleteGoal = useCallback(async (id: string) => {
-    await deleteGoalAction(id, getClientDeviceId());
+    const prevGoal = dataRef.current?.goals.find((g) => g.id === id);
+    pendingDeletedIdsRef.current.add(id);
     setData((prev) => prev ? {
       ...prev,
       goals: prev.goals.filter((g) => g.id !== id),
     } : null);
     broadcastLocal('goal:delete', { goalId: id });
     addToast({ title: 'Goal Removed', description: 'Goal deleted.', variant: 'default' });
+
+    deleteGoalAction(id, getClientDeviceId())
+      .then(() => {
+        pendingDeletedIdsRef.current.delete(id);
+      })
+      .catch((err) => {
+        pendingDeletedIdsRef.current.delete(id);
+        console.error('Failed to delete goal:', err);
+        if (prevGoal) {
+          setData((prev) =>
+            prev && !prev.goals.some((g) => g.id === prevGoal.id)
+              ? { ...prev, goals: [...prev.goals, prevGoal] }
+              : prev
+          );
+          broadcastLocal('goal:create', { goal: prevGoal });
+        }
+        addToast({
+          title: 'Failed to Delete Goal',
+          description: 'Network error while deleting goal. Entry restored.',
+          variant: 'error',
+        });
+      });
   }, [addToast, broadcastLocal]);
 
   // Backup & Account
@@ -1875,6 +2383,9 @@ export function WorkspaceProvider({
     recoveredSessionNotice,
     dismissRecoveredNotice,
     persistActiveTimer,
+    insertOptimisticSession,
+    reconcileOptimisticSession,
+    removeOptimisticSession,
     refreshWorkspace,
     completeOnboarding,
     updateProfile,
@@ -1928,6 +2439,9 @@ export function WorkspaceProvider({
     recoveredSessionNotice,
     dismissRecoveredNotice,
     persistActiveTimer,
+    insertOptimisticSession,
+    reconcileOptimisticSession,
+    removeOptimisticSession,
     refreshWorkspace,
     completeOnboarding,
     updateProfile,

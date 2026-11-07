@@ -637,7 +637,14 @@ export async function createStudySessionTransactional(
           if (data.clearActiveTimer) {
             await tx
               .delete(activeTimerSessions)
-              .where(eq(activeTimerSessions.userId, userId));
+              .where(
+                data.idempotencyKey
+                  ? and(
+                      eq(activeTimerSessions.userId, userId),
+                      eq(activeTimerSessions.idempotencyKey, data.idempotencyKey)
+                    )
+                  : eq(activeTimerSessions.userId, userId)
+              );
           }
           return { session: dup[0], duplicate: true };
         }
@@ -693,7 +700,14 @@ export async function createStudySessionTransactional(
       if (data.clearActiveTimer) {
         await tx
           .delete(activeTimerSessions)
-          .where(eq(activeTimerSessions.userId, userId));
+          .where(
+            data.idempotencyKey
+              ? and(
+                  eq(activeTimerSessions.userId, userId),
+                  eq(activeTimerSessions.idempotencyKey, data.idempotencyKey)
+                )
+              : eq(activeTimerSessions.userId, userId)
+          );
       }
 
       return { session: inserted, duplicate: false };
@@ -2005,11 +2019,19 @@ export async function upsertActiveTimer(
   return { timer };
 }
 
-export async function deleteActiveTimer(userId: string) {
-  await db
+export async function deleteActiveTimer(userId: string, expectedIdempotencyKey?: string) {
+  const condition = expectedIdempotencyKey
+    ? and(
+        eq(activeTimerSessions.userId, userId),
+        eq(activeTimerSessions.idempotencyKey, expectedIdempotencyKey)
+      )
+    : eq(activeTimerSessions.userId, userId);
+
+  const deleted = await db
     .delete(activeTimerSessions)
-    .where(eq(activeTimerSessions.userId, userId));
-  return { success: true };
+    .where(condition)
+    .returning({ idempotencyKey: activeTimerSessions.idempotencyKey });
+  return { success: true, deleted: deleted.length > 0 };
 }
 
 // ==============================================================================

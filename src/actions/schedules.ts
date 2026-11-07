@@ -9,7 +9,6 @@ import {
 } from '@/lib/db/repository';
 import { ScheduleSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -38,7 +37,6 @@ export async function createScheduleAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, schedule };
 }
 
@@ -65,7 +63,6 @@ export async function updateScheduleAction(id: string, raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, schedule };
 }
 
@@ -80,6 +77,5 @@ export async function deleteScheduleAction(id: string, clientDeviceId?: string) 
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }

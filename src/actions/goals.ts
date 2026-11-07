@@ -9,7 +9,6 @@ import {
 } from '@/lib/db/repository';
 import { GoalSchema } from '@/lib/validations';
 import { publishSyncEvent } from '@/lib/realtime';
-import { revalidatePath } from 'next/cache';
 
 async function requireUser() {
   const user = await getCurrentUser();
@@ -40,7 +39,6 @@ export async function createGoalAction(raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, goal };
 }
 
@@ -67,7 +65,6 @@ export async function updateGoalAction(id: string, raw: unknown) {
     });
   }
 
-  revalidatePath('/');
   return { success: true, goal };
 }
 
@@ -82,6 +79,5 @@ export async function deleteGoalAction(id: string, clientDeviceId?: string) {
     clientDeviceId,
   });
 
-  revalidatePath('/');
   return { success: true };
 }
