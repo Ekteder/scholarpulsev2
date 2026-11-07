@@ -32,16 +32,18 @@ export async function syncActiveTimerAction(raw: unknown) {
   });
 
   if (result.timer) {
+    const eventUpdatedAt = Date.now();
     await publishSyncEvent({
       userId: user.uid,
       eventType: 'timer:update',
-      payload: { timer: result.timer },
+      payload: { timer: result.timer, serverUpdatedAt: eventUpdatedAt },
       clientDeviceId: parsed.clientDeviceId,
     });
 
     const syncedTimer = result.timer;
     const originDeviceId = parsed.clientDeviceId || '';
     const targetUid = user.uid;
+    const timerKey = syncedTimer.idempotencyKey || '';
 
     // Non-blocking background fan-out to Android native TimerForegroundService (kept alive via Next.js after() / waitUntil)
     after(async () => {
@@ -57,8 +59,9 @@ export async function syncActiveTimerAction(raw: unknown) {
             type: 'timer_state',
             action,
             accumulatedSeconds: String(syncedTimer.accumulatedSeconds || 0),
-            updatedAt: String(Date.now()),
+            updatedAt: String(eventUpdatedAt),
             originDeviceId,
+            idempotencyKey: timerKey,
             userId: targetUid,
           },
         });
@@ -87,15 +90,20 @@ export async function deleteActiveTimerAction(
     }
   }
 
+  const eventUpdatedAt = Date.now();
   await publishSyncEvent({
     userId: user.uid,
     eventType: 'timer:delete',
-    payload: expectedIdempotencyKey ? { idempotencyKey: expectedIdempotencyKey } : {},
+    payload: {
+      ...(expectedIdempotencyKey ? { idempotencyKey: expectedIdempotencyKey } : {}),
+      serverUpdatedAt: eventUpdatedAt,
+    },
     clientDeviceId,
   });
 
   const targetUid = user.uid;
   const originDeviceId = clientDeviceId || '';
+  const clearedKey = expectedIdempotencyKey || '';
 
   // Non-blocking background fan-out STOP to Android native TimerForegroundService (kept alive via Next.js after() / waitUntil)
   after(async () => {
@@ -109,8 +117,9 @@ export async function deleteActiveTimerAction(
         data: {
           type: 'timer_state',
           action: 'STOP',
-          updatedAt: String(Date.now()),
+          updatedAt: String(eventUpdatedAt),
           originDeviceId,
+          idempotencyKey: clearedKey,
           userId: targetUid,
         },
       });

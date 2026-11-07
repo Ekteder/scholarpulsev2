@@ -575,14 +575,16 @@ export function WorkspaceProvider({
           if (isRecentlyClearedTimer(incomingTimer.idempotencyKey)) return;
 
           // Forward to Native Android Bridge if running inside native shell
+          const updateTimestamp = payload?.serverUpdatedAt || Date.now();
           if (typeof window !== 'undefined' && (window as any).ScholarPulseBridge?.call) {
             try {
               const action = incomingTimer.status === 'paused' ? 'PAUSE' : 'RESUME';
               (window as any).ScholarPulseBridge.call('timer.onRemoteSync', {
                 action,
                 accumulatedSeconds: incomingTimer.accumulatedSeconds,
-                updatedAt: Date.now(),
+                updatedAt: updateTimestamp,
                 originDeviceId: incomingTimer.clientDeviceId || '',
+                idempotencyKey: incomingTimer.idempotencyKey || '',
               });
             } catch (e) {
               console.warn('[WorkspaceContext] Failed to forward timer:update to native bridge:', e);
@@ -593,7 +595,7 @@ export function WorkspaceProvider({
               (window as any).ScholarPulseBridge.onRemoteTimerSync(
                 action,
                 incomingTimer.accumulatedSeconds || 0,
-                Date.now(),
+                updateTimestamp,
                 incomingTimer.clientDeviceId || ''
               );
             } catch (e) {
@@ -633,19 +635,21 @@ export function WorkspaceProvider({
             }
           }
 
+          const deleteTimestamp = payload?.serverUpdatedAt || Date.now();
           if (typeof window !== 'undefined' && (window as any).ScholarPulseBridge?.call) {
             try {
               (window as any).ScholarPulseBridge.call('timer.onRemoteSync', {
                 action: 'STOP',
-                updatedAt: Date.now(),
+                updatedAt: deleteTimestamp,
                 originDeviceId: '',
+                idempotencyKey: deletedKey || '',
               });
             } catch (e) {
               console.warn('[WorkspaceContext] Failed to forward timer:delete to native bridge:', e);
             }
           } else if (typeof window !== 'undefined' && typeof (window as any).ScholarPulseBridge?.onRemoteTimerSync === 'function') {
             try {
-              (window as any).ScholarPulseBridge.onRemoteTimerSync('STOP', 0, Date.now(), '');
+              (window as any).ScholarPulseBridge.onRemoteTimerSync('STOP', 0, deleteTimestamp, '');
             } catch (e) {
               console.warn('[WorkspaceContext] Failed to forward timer:delete to native bridge via onRemoteTimerSync:', e);
             }
