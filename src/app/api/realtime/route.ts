@@ -12,7 +12,7 @@ import {
 } from '@/lib/realtime';
 import { getUserActiveTimer } from '@/lib/db/repository';
 
-export const maxDuration = 60; // Up to 60 seconds on Vercel
+export const maxDuration = 300; // Up to 300 seconds (5 minutes) on Vercel Fluid Compute / Pro
 
 /**
  * Two protocols share this endpoint:
@@ -245,10 +245,10 @@ export async function GET(req: NextRequest) {
         safeEnqueue(': keepalive\n\n');
       }, 15000);
 
-      // 6. Graceful closure at 55 seconds to prevent hard Vercel timeout errors
+      // 6. Graceful closure at 295 seconds to prevent hard Vercel timeout errors (5s safety buffer before maxDuration)
       maxDurationTimer = setTimeout(() => {
         cleanup();
-      }, 55000);
+      }, 295000);
     },
     cancel() {
       isClosed = true;
