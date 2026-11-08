@@ -1608,7 +1608,7 @@ export function WorkspaceProvider({
         idempotencyKey,
         clientDeviceId: getClientDeviceId(),
       });
-      if (!res.success || !res.session) throw new Error('Failed to save study session');
+      if (!res.success || !res.session) throw new Error((res as any)?.error || 'Failed to save study session');
       const session = res.session as StudySession;
       reconcileOptimisticSession(tempId, session);
       addToast({ title: 'Session Saved', description: 'Study activity logged successfully.', variant: 'success' });
@@ -1657,7 +1657,7 @@ export function WorkspaceProvider({
 
     try {
       const res = await updateStudySessionAction(id, { ...payload, clientDeviceId: getClientDeviceId() });
-      if (!res.success || !res.session) throw new Error('Failed to update session');
+      if (!res.success || !res.session) throw new Error((res as any)?.error || 'Failed to update session');
       const session = res.session as StudySession;
       setData((prev) => {
         if (!prev) return null;
