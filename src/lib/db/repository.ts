@@ -32,6 +32,7 @@ import {
   DEFAULT_TOPICS,
 } from './curriculumSeed';
 import { REVISION_CATEGORIES } from '@/types';
+import type { DbTx } from '../realtime';
 import {
   addDaysToYmd,
   computeStreaksFromDates,
@@ -595,6 +596,12 @@ export async function verifySubjectOwnership(userId: string, subjectId: string) 
 }
 
 /**
+ * Lets a caller run extra writes (e.g. the sync-event outbox row) INSIDE the repository's
+ * transaction, so the domain write and the event commit or roll back together.
+ */
+export type TxHook<T> = { inTx?: (tx: DbTx, result: T) => Promise<void> };
+
+/**
  * Creates a study session inside a transaction with overlap checking and idempotency protection
  */
 export async function createStudySessionTransactional(
@@ -609,7 +616,8 @@ export async function createStudySessionTransactional(
     sessionType: 'manual' | 'timer';
     idempotencyKey?: string;
     clearActiveTimer?: boolean;
-  }
+  },
+  hooks?: TxHook<{ session: typeof studySessions.$inferSelect; duplicate: boolean }>
 ) {
   try {
     return await db.transaction(async (tx) => {
@@ -646,7 +654,9 @@ export async function createStudySessionTransactional(
                   : eq(activeTimerSessions.userId, userId)
               );
           }
-          return { session: dup[0], duplicate: true };
+          const dupResult = { session: dup[0], duplicate: true };
+          await hooks?.inTx?.(tx, dupResult);
+          return dupResult;
         }
       }
 
@@ -710,7 +720,9 @@ export async function createStudySessionTransactional(
           );
       }
 
-      return { session: inserted, duplicate: false };
+      const created = { session: inserted, duplicate: false };
+      await hooks?.inTx?.(tx, created);
+      return created;
     });
   } catch (error: any) {
     console.error('Database error in createStudySessionTransactional:', error);
@@ -731,7 +743,8 @@ export async function updateStudySessionTransactional(
     topic: string;
     notes?: string;
     productivityRating?: number;
-  }>
+  }>,
+  hooks?: TxHook<typeof studySessions.$inferSelect>
 ) {
   try {
     return await db.transaction(async (tx) => {
@@ -800,6 +813,7 @@ export async function updateStudySessionTransactional(
         .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
         .returning();
 
+      await hooks?.inTx?.(tx, updated);
       return updated;
     });
   } catch (error: any) {
@@ -811,19 +825,27 @@ export async function updateStudySessionTransactional(
 /**
  * Deletes a study session and recalculates goals and achievements
  */
-export async function deleteStudySessionTransactional(userId: string, sessionId: string) {
+export async function deleteStudySessionTransactional(
+  userId: string,
+  sessionId: string,
+  hooks?: TxHook<typeof studySessions.$inferSelect>
+) {
   try {
-    const deleted = await db
-      .delete(studySessions)
-      .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
-      .returning();
+    const deleted = await db.transaction(async (tx) => {
+      const rows = await tx
+        .delete(studySessions)
+        .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
+        .returning();
 
-    if (deleted.length === 0) {
-      throw new Error('Study session not found or access denied.');
-    }
+      if (rows.length === 0) {
+        throw new Error('Study session not found or access denied.');
+      }
+      await hooks?.inTx?.(tx, rows[0]);
+      return rows[0];
+    });
 
     await recalculateGoalsAndAchievements(userId);
-    return deleted[0];
+    return deleted;
   } catch (error: any) {
     console.error('Database error in deleteStudySessionTransactional:', error);
     throw new Error(error.message || 'Failed to delete study session.', { cause: error });

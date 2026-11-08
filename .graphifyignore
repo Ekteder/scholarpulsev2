@@ -1,0 +1,12 @@
+# Ephemeral agent & test artifacts
+.agents/teamwork/
+playwright-report/
+test-results/
+*.sqlite*
+*.db
+
+# Credential & service-account fixtures
+*service-account*.json
+firebase-adminsdk*.json
+.env*
+!.env.example

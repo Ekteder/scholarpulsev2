@@ -51,6 +51,8 @@ const SYNC_EVENT_TYPES = [
   'profile:update',
   'preferences:update',
   'workspace:refresh',
+  'goals:recalculated',
+  'resync',
   'user:banned',
 ] as const;
 
@@ -65,11 +67,11 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
-  // Initialize cursor from session storage if available
+  // Initialize cursor from session storage if available (v2 uses isolated sequence key)
   useEffect(() => {
     if (!userId || typeof window === 'undefined') return;
     try {
-      const stored = sessionStorage.getItem(`scholarpulse_last_event_${userId}`);
+      const stored = sessionStorage.getItem(`scholarpulse_last_event_v2_${userId}`);
       if (stored) {
         const parsed = parseInt(stored, 10);
         if (!isNaN(parsed) && parsed > 0) {
@@ -84,9 +86,19 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       lastEventIdRef.current = id;
       if (uid && typeof window !== 'undefined') {
         try {
-          sessionStorage.setItem(`scholarpulse_last_event_${uid}`, String(id));
+          sessionStorage.setItem(`scholarpulse_last_event_v2_${uid}`, String(id));
         } catch {}
       }
+    }
+  }, []);
+
+  // Used on `resync`: adopts the server's cursor position explicitly
+  const setLastEventId = useCallback((id: number, uid?: string) => {
+    lastEventIdRef.current = id;
+    if (uid && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(`scholarpulse_last_event_v2_${uid}`, String(id));
+      } catch {}
     }
   }, []);
 
@@ -142,7 +154,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       }
     }
 
-    // Setup Server-Sent Events (SSE)
+    // Setup Server-Sent Events (SSE) using protocol v2
     let es: EventSource | null = null;
 
     const connectSSE = () => {
@@ -160,7 +172,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       setSyncStatus('connecting');
       const lastId = lastEventIdRef.current;
       const lastParam = lastId > 0 ? `&lastEventId=${lastId}` : '';
-      const url = `/api/realtime?deviceId=${encodeURIComponent(deviceId)}${lastParam}`;
+      const url = `/api/realtime?v=2&deviceId=${encodeURIComponent(deviceId)}${lastParam}`;
       es = new EventSource(url);
       eventSourceRef.current = es;
 
@@ -186,33 +198,49 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
         setLastSyncTime(new Date());
         setSyncStatus('connected');
 
-        if (event.lastEventId) {
-          const parsedId = parseInt(event.lastEventId, 10);
-          if (!isNaN(parsedId) && parsedId > 0) {
-            updateLastEventId(parsedId, userId);
+        let data: any = {};
+        try {
+          data = event.data ? JSON.parse(event.data) : {};
+        } catch (err) {
+          console.warn(`Error parsing SSE data for ${evType}:`, err);
+          return;
+        }
+        const origin = data?._originDeviceId || data?.clientDeviceId;
+
+        // Server informed of cursor gap/pruning: adopt position and trigger refresh
+        if (evType === 'resync') {
+          const seq = parseInt(String(data?.seq ?? event.lastEventId), 10);
+          if (!isNaN(seq) && seq >= 0) setLastEventId(seq, userId);
+          onEventRef.current?.('resync', data, 'server');
+          return;
+        }
+
+        // Handshake: sets initial baseline cursor
+        if (evType === 'connected') {
+          const seq = parseInt(String(data?.seq ?? data?.lastSeenId ?? ''), 10);
+          if (!isNaN(seq) && seq > 0) updateLastEventId(seq, userId);
+          onEventRef.current?.(evType, data, origin);
+          return;
+        }
+
+        // Baseline timer updates carry no sequence ID
+        const isSequenced = !data?.fromBaseline;
+        let gapDetected = false;
+
+        if (isSequenced) {
+          const seq = parseInt(event.lastEventId, 10);
+          if (!isNaN(seq) && seq > 0) {
+            const last = lastEventIdRef.current;
+            if (seq <= last) return; // Duplicate/replay: already applied
+            if (last > 0 && seq !== last + 1) gapDetected = true; // Sequence gap detected
+            updateLastEventId(seq, userId);
           }
         }
 
-        try {
-          const data = event.data ? JSON.parse(event.data) : {};
-          if (data?.lastSeenId) {
-            const parsed = parseInt(data.lastSeenId, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              updateLastEventId(parsed, userId);
-            }
-          }
-          if (data?._eventId) {
-            const parsed = parseInt(data._eventId, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              updateLastEventId(parsed, userId);
-            }
-          }
-          const origin = data?._originDeviceId || data?.clientDeviceId;
-          if (onEventRef.current) {
-            onEventRef.current(evType, data, origin);
-          }
-        } catch (err) {
-          console.warn(`Error parsing SSE data for ${evType}:`, err);
+        onEventRef.current?.(evType, data, origin);
+
+        if (gapDetected) {
+          onEventRef.current?.('resync', { reason: 'client_gap' }, 'client');
         }
       };
 
@@ -271,7 +299,7 @@ export function useRealtimeSync({ userId, onEvent }: UseRealtimeSyncOptions) {
       }
       setSyncStatus('disconnected');
     };
-  }, [userId, updateLastEventId]);
+  }, [userId, updateLastEventId, setLastEventId]);
 
   return {
     syncStatus,

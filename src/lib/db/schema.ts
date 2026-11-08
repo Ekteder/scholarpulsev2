@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import {
+  bigint,
   bigserial,
   boolean,
   index,
@@ -488,13 +489,22 @@ export const syncEvents = pgTable(
     eventType: text('event_type').notNull(), // 'timer:update' | 'timer:delete' | 'workspace:refresh' | etc.
     payload: text('payload').notNull(), // JSON stringified payload
     clientDeviceId: text('client_device_id').default(''),
+    // Gapless per-user sequence allocated inside transactional outbox
+    seq: bigint('seq', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('sync_events_user_id_id_idx').on(table.userId, table.id),
     index('sync_events_created_at_idx').on(table.createdAt),
+    uniqueIndex('sync_events_user_seq_idx').on(table.userId, table.seq),
   ]
 );
+
+// One row per user: row lock on atomic increment guarantees gapless monotonically increasing sequence
+export const syncCounters = pgTable('sync_counters', {
+  userId: text('user_id').primaryKey(),
+  seq: bigint('seq', { mode: 'number' }).notNull().default(0),
+});
 
 // ==============================================================================
 // 19. Admin Allowlist table

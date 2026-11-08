@@ -4,6 +4,9 @@ import {
   getRealtimeEmitter,
   getSyncEventsForUser,
   getLatestSyncEventId,
+  getSyncEventsAfterSeq,
+  getMaxSeq,
+  getNextRetainedSeq,
   RealtimeSyncEvent,
   ADMIN_REALTIME_CHANNEL,
 } from '@/lib/realtime';
@@ -11,6 +14,14 @@ import { getUserActiveTimer } from '@/lib/db/repository';
 
 export const maxDuration = 60; // Up to 60 seconds on Vercel
 
+/**
+ * Two protocols share this endpoint:
+ *
+ *  v2 (?v=2, sent by useRealtimeSync): cursor = per-user gapless seq.
+ *      Detects stale/gapped cursors and prompts the client to resync.
+ *  v1 (no v param: legacy clients and admin hook): cursor = global id.
+ *      Behaviour unchanged for full backward compatibility.
+ */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user || user.isBanned) {
@@ -22,21 +33,37 @@ export async function GET(req: NextRequest) {
   const isAdmin = ((user as any).role === 'admin') || (await isUserAdmin(user));
 
   const searchParams = req.nextUrl.searchParams;
-  const clientDeviceId = searchParams.get('deviceId') || '';
-  const lastEventIdParam =
-    searchParams.get('lastEventId') || req.headers.get('last-event-id');
+  const protocol: 1 | 2 = searchParams.get('v') === '2' ? 2 : 1;
 
-  let lastSeenId = 0;
-  if (lastEventIdParam) {
-    const parsed = parseInt(lastEventIdParam, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      lastSeenId = parsed;
-    }
+  // The ?lastEventId= param is frozen when the client creates the EventSource, while the browser's
+  // automatic reconnects send an up-to-date Last-Event-ID header. Take the larger so a stale param
+  // cannot make reconnects replay old events.
+  let cursor = 0;
+  for (const raw of [searchParams.get('lastEventId'), req.headers.get('last-event-id')]) {
+    const parsed = raw ? parseInt(raw, 10) : NaN;
+    if (!isNaN(parsed) && parsed > cursor) cursor = parsed;
   }
 
-  // If no lastEventId was provided (fresh connection), start from current latest event ID
-  if (lastSeenId === 0) {
-    lastSeenId = await getLatestSyncEventId(user.uid, isAdmin);
+  // Establish starting cursor and check if client cursor has a gap due to pruning
+  let lastSeen = cursor;
+  let resyncNeeded = false;
+
+  if (protocol === 2) {
+    const maxSeq = await getMaxSeq(user.uid);
+    if (cursor === 0) {
+      lastSeen = maxSeq;
+    } else if (cursor > maxSeq) {
+      resyncNeeded = true;
+      lastSeen = maxSeq;
+    } else if (cursor < maxSeq) {
+      const next = await getNextRetainedSeq(user.uid, cursor);
+      if (next !== cursor + 1) {
+        resyncNeeded = true;
+        lastSeen = maxSeq;
+      }
+    }
+  } else if (lastSeen === 0) {
+    lastSeen = await getLatestSyncEventId(user.uid, isAdmin);
   }
 
   const encoder = new TextEncoder();
@@ -88,31 +115,47 @@ export async function GET(req: NextRequest) {
         }
       };
 
-      const formatSseMessage = (id: number, eventType: string, payload: string) => {
+      const formatSseMessage = (id: number | null, eventType: string, payload: string) => {
         const lines = payload.split(/\r\n|\r|\n/);
         const dataLines = lines.map((l) => `data: ${l}`).join('\n');
-        return `id: ${id}\nevent: ${eventType}\n${dataLines}\n\n`;
+        return id !== null && id > 0
+          ? `id: ${id}\nevent: ${eventType}\n${dataLines}\n\n`
+          : `event: ${eventType}\n${dataLines}\n\n`;
       };
+
+      const cursorOf = (ev: RealtimeSyncEvent): number | null =>
+        protocol === 2 ? ev.seq : ev.id;
 
       // 1. Configure SSE retry timeout to 1 second
       safeEnqueue('retry: 1000\n\n');
 
-      // 2. Fetch current timer baseline and emit connected ack with baseline cursor ID
+      // 2. Fetch current timer baseline and emit connected ack with baseline cursor
       const initialTimer = await getUserActiveTimer(user.uid);
       const connectedPayload = JSON.stringify({
         status: 'connected',
+        protocol,
         serverTime: new Date().toISOString(),
-        lastSeenId,
+        lastSeenId: lastSeen,
+        seq: protocol === 2 ? lastSeen : undefined,
         activeTimer: initialTimer || null,
         isAdmin,
       });
       safeEnqueue(
-        lastSeenId > 0
-          ? `id: ${lastSeenId}\nevent: connected\ndata: ${connectedPayload}\n\n`
-          : `event: connected\ndata: ${connectedPayload}\n\n`
+        formatSseMessage(lastSeen > 0 ? lastSeen : null, 'connected', connectedPayload)
       );
 
-      // If there's an active timer running on connection start, emit immediate timer:update
+      // If resync is needed due to a sequence gap, emit resync immediately
+      if (resyncNeeded) {
+        safeEnqueue(
+          formatSseMessage(
+            lastSeen > 0 ? lastSeen : null,
+            'resync',
+            JSON.stringify({ reason: 'cursor_gap', seq: lastSeen })
+          )
+        );
+      }
+
+      // If there's an active timer running on connection start, emit immediate timer baseline
       if (initialTimer) {
         safeEnqueue(
           `event: timer:update\ndata: ${JSON.stringify({
@@ -133,21 +176,19 @@ export async function GET(req: NextRequest) {
       // 3. Fast In-Memory Listener for 0ms delivery within same worker process
       localListener = (ev: RealtimeSyncEvent) => {
         if (isClosed) return;
-        if (ev.id > lastSeenId) {
-          lastSeenId = ev.id;
-          safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
+        const c = cursorOf(ev);
+        if (c !== null && c > lastSeen) {
+          lastSeen = c;
+          safeEnqueue(formatSseMessage(c, ev.eventType, ev.payload));
         }
       };
       emitter.on(`user:${user.uid}`, localListener);
 
-      // If user is allowlisted admin, subscribe to in-memory admin events channel
+      // Admin broadcasts delivered to admins regardless of protocol version
       if (isAdmin) {
         adminListener = (ev: RealtimeSyncEvent) => {
           if (isClosed) return;
-          if (ev.id > lastSeenId) {
-            lastSeenId = ev.id;
-            safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
-          }
+          safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
         };
         emitter.on(ADMIN_REALTIME_CHANNEL, adminListener);
       }
@@ -159,15 +200,20 @@ export async function GET(req: NextRequest) {
       const pollDbEvents = async () => {
         if (isClosed) return;
         try {
-          const events = await getSyncEventsForUser(user.uid, lastSeenId, 50, isAdmin);
+          const events: RealtimeSyncEvent[] =
+            protocol === 2
+              ? await getSyncEventsAfterSeq(user.uid, lastSeen, 50)
+              : await getSyncEventsForUser(user.uid, lastSeen, 50, isAdmin);
+
           if (events.length > 0) {
             consecutiveEmptyPolls = 0;
             currentIntervalMs = 2000;
             for (const ev of events) {
               if (isClosed) break;
-              if (ev.id > lastSeenId) {
-                lastSeenId = ev.id;
-                safeEnqueue(formatSseMessage(ev.id, ev.eventType, ev.payload));
+              const c = cursorOf(ev);
+              if (c !== null && c > lastSeen) {
+                lastSeen = c;
+                safeEnqueue(formatSseMessage(c, ev.eventType, ev.payload));
               }
             }
           } else {
@@ -176,7 +222,7 @@ export async function GET(req: NextRequest) {
               currentIntervalMs = Math.min(4000, currentIntervalMs + 500);
             }
           }
-        } catch (err) {
+        } catch {
           // Ignore transient polling query errors
         }
       };
@@ -189,7 +235,7 @@ export async function GET(req: NextRequest) {
         }, currentIntervalMs);
       };
 
-      // Poll initially for any missed events since lastSeenId
+      // Poll initially for any missed events since lastSeen
       await pollDbEvents();
       scheduleNextPoll();
 

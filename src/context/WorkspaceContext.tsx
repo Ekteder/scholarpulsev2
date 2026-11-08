@@ -1113,6 +1113,15 @@ export function WorkspaceProvider({
           break;
         }
 
+        case 'resync': {
+          // Server or client detected a sequence gap: refresh full workspace and revision data
+          refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+          if (revisionCacheRef.current) {
+            fetchRevisionWorkspace(true).catch(() => {});
+          }
+          break;
+        }
+
         case 'user:banned': {
           const isBanned = payload?.isBanned ?? true;
           setUser((prev) => (prev ? { ...prev, isBanned } : null));
