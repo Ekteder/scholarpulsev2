@@ -418,7 +418,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - finalDurationSeconds * 1000);
       const nowIso = endTime.toISOString();
-      const finalIdempotencyKey = `${timerSnapshot.idempotencyKey}_final`;
+      const finalIdempotencyKey = timerSnapshot.idempotencyKey;
       const tempId = `optimistic_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
       const payload = {
@@ -625,24 +625,59 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     skipPomodoroPhaseBridge,
   ]);
 
+  const reconcileWithNativeState = useCallback((): boolean => {
+    if (!isNativeApp) return false;
+    try {
+      const syncState = getNativeTimerSyncState();
+      if (!syncState) return false;
+      const isMatchingKey = Boolean(
+        activeTimer &&
+        syncState.lastFinishedIdempotencyKey &&
+        activeTimer.idempotencyKey === syncState.lastFinishedIdempotencyKey
+      );
+
+      if (isMatchingKey || syncState.pendingReview) {
+        if (activeTimer) {
+          persistActiveTimer(null, activeTimer.idempotencyKey);
+        }
+        if (syncState.pendingReview) {
+          const mins = Math.max(1, Math.round(syncState.pendingReview.durationSeconds / 60));
+          addToast({
+            title: 'Study Session Saved',
+            description: `Recorded ${mins} min of study for "${syncState.pendingReview.topic || 'General Study'}".`,
+            variant: 'success',
+          });
+          acknowledgeNativeReview(syncState.pendingReview.idempotencyKey);
+        }
+        refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
+        return true;
+      }
+    } catch (err) {
+      console.warn('[TimerContext] Error reconciling with native state:', err);
+    }
+    return false;
+  }, [isNativeApp, activeTimer, persistActiveTimer, addToast, refreshWorkspace]);
+
   // Keep refs fresh so listeners never close over stale handlers
   const pauseTimerRef = useRef(pauseTimer);
   const resumeTimerRef = useRef(resumeTimer);
   const finishTimerSessionRef = useRef(finishTimerSession);
   const skipPomodoroPhaseRef = useRef(skipPomodoroPhase);
+  const reconcileWithNativeStateRef = useRef(reconcileWithNativeState);
 
   useEffect(() => {
     pauseTimerRef.current = pauseTimer;
     resumeTimerRef.current = resumeTimer;
     finishTimerSessionRef.current = finishTimerSession;
     skipPomodoroPhaseRef.current = skipPomodoroPhase;
+    reconcileWithNativeStateRef.current = reconcileWithNativeState;
   });
 
   // Native notification action listener (lock-screen notification actions: pause, resume, stop, skip)
   useEffect(() => {
     if (!isNativeApp) return;
 
-    const unsubscribe = subscribe<{ action: string; source?: string }>(
+    const unsubscribe = subscribe<{ action: string; source?: string; alreadySaved?: boolean }>(
       'timer.actionTriggered',
       (payload) => {
         const action = payload?.action;
@@ -650,8 +685,19 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
           pauseTimerRef.current();
         } else if (action === 'resume') {
           resumeTimerRef.current();
-        } else if (action === 'stop' || action === 'finish') {
-          finishTimerSessionRef.current();
+        } else if (action === 'stop' || action === 'finish' || action === 'reconcile') {
+          if (
+            payload?.source === 'notification' ||
+            payload?.source === 'native_tombstone' ||
+            payload?.alreadySaved ||
+            action === 'reconcile'
+          ) {
+            // Native Android already saved the session to Room and synced to the cloud.
+            // Reconcile local state — DO NOT call finishTimerSession() which creates a duplicate!
+            reconcileWithNativeStateRef.current();
+          } else {
+            finishTimerSessionRef.current();
+          }
         } else if (action === 'skipPhase' || action === 'skip_break') {
           skipPomodoroPhaseRef.current();
         }
@@ -676,37 +722,6 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
 
     return unsubscribe;
   }, [isNativeApp, subscribe]);
-
-  const reconcileWithNativeState = useCallback((): boolean => {
-    if (!isNativeApp) return false;
-    try {
-      const syncState = getNativeTimerSyncState();
-      if (!syncState) return false;
-      if (
-        activeTimer &&
-        syncState.lastFinishedIdempotencyKey &&
-        activeTimer.idempotencyKey === syncState.lastFinishedIdempotencyKey
-      ) {
-        // 1. Clear active timer locally so the spawner effect does NOT resurrect it
-        persistActiveTimer(null, activeTimer.idempotencyKey);
-        // 2. Display the Option C auto-saved toast / notification
-        if (syncState.pendingReview) {
-          const mins = Math.max(1, Math.round(syncState.pendingReview.durationSeconds / 60));
-          addToast({
-            title: 'Study Session Saved',
-            description: `Recorded ${mins} min of study for "${syncState.pendingReview.topic || 'General Study'}".`,
-            variant: 'success',
-          });
-          acknowledgeNativeReview(syncState.pendingReview.idempotencyKey);
-        }
-        refreshWorkspace({ silent: true, preserveLocalTimer: true }).catch(() => {});
-        return true;
-      }
-    } catch (err) {
-      console.warn('[TimerContext] Error reconciling with native state:', err);
-    }
-    return false;
-  }, [isNativeApp, activeTimer, persistActiveTimer, addToast, refreshWorkspace]);
 
   useEffect(() => {
     if (!isNativeApp) return;
